@@ -1,0 +1,88 @@
+.PHONY: run tidy up down logs migrate-up migrate-down migrate-force build
+
+run:
+	@godotenv go run ./cmd/server
+
+tidy:
+	go mod tidy
+
+up:
+	docker compose up -d --build
+
+down:
+	docker compose down
+
+logs:
+	docker compose logs -f
+
+build:
+	@echo "Building Go binary for Linux..."
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/server ./cmd/server
+
+# Helper to get POSTGRES_DSN from .env file
+get-dsn:
+	@if [ ! -f .env ]; then \
+		echo "Error: .env file not found. Please create it from .envtemplate"; \
+		exit 1; \
+	fi
+	@grep '^POSTGRES_DSN=' .env | cut -d '=' -f2-
+
+migrate-up:
+	@if [ ! -f .env ]; then \
+		echo "Error: .env file not found"; \
+		exit 1; \
+	fi
+	@DB_DSN=$$(grep '^POSTGRES_DSN=' .env | cut -d '=' -f2-); \
+	if [ -z "$$DB_DSN" ]; then \
+		echo "Error: POSTGRES_DSN not found in .env file"; \
+		exit 1; \
+	fi; \
+	docker compose run --rm migrate -path /migrations -database "$$DB_DSN" up
+
+migrate-down:
+	@if [ ! -f .env ]; then \
+		echo "Error: .env file not found"; \
+		exit 1; \
+	fi
+	@DB_DSN=$$(grep '^POSTGRES_DSN=' .env | cut -d '=' -f2-); \
+	if [ -z "$$DB_DSN" ]; then \
+		echo "Error: POSTGRES_DSN not found in .env file"; \
+		exit 1; \
+	fi; \
+	docker compose run --rm migrate -path /migrations -database "$$DB_DSN" down 1
+
+migrate-force:
+	@if [ -z "$(V)" ]; then \
+		echo "Error: V (version) is required. Usage: make migrate-force V=1"; \
+		exit 1; \
+	fi
+	@if [ ! -f .env ]; then \
+		echo "Error: .env file not found"; \
+		exit 1; \
+	fi
+	@DB_DSN=$$(grep '^POSTGRES_DSN=' .env | cut -d '=' -f2-); \
+	if [ -z "$$DB_DSN" ]; then \
+		echo "Error: POSTGRES_DSN not found in .env file"; \
+		exit 1; \
+	fi; \
+	docker compose run --rm migrate -path /migrations -database "$$DB_DSN" force $(V)
+
+# Production deployment helpers
+deploy-check:
+	@echo "Checking deployment prerequisites..."
+	@command -v docker >/dev/null 2>&1 || { echo "Error: docker is required but not installed"; exit 1; }
+	@command -v docker compose >/dev/null 2>&1 || { echo "Error: docker compose is required but not installed"; exit 1; }
+	@command -v godotenv >/dev/null 2>&1 || { echo "Error: godotenv is required. Install with: go install github.com/joho/godotenv/cmd/godotenv@latest"; exit 1; }
+	@if [ ! -f .env ]; then \
+		echo "Warning: .env file not found. Make sure to create it on the server."; \
+	fi
+	@echo "All prerequisites met!"
+
+# Run migrations in production (assumes .env is set up)
+migrate-prod:
+	@DB_DSN=$$(grep '^POSTGRES_DSN=' .env | cut -d '=' -f2-); \
+	if [ -z "$$DB_DSN" ]; then \
+		echo "Error: POSTGRES_DSN not found in .env file"; \
+		exit 1; \
+	fi; \
+	docker compose run --rm migrate -path /migrations -database "$$DB_DSN" up

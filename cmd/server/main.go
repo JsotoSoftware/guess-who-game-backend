@@ -10,6 +10,7 @@ import (
 
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/config"
 	httphandler "github.com/JsotoSoftware/guess-who-game-backend/internal/http"
+	"github.com/JsotoSoftware/guess-who-game-backend/internal/storage"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -23,7 +24,15 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to load config")
 	}
 
-	r := httphandler.NewRouter()
+	ctx := context.Background()
+
+	st, err := storage.New(ctx, cfg.PostgresDSN, cfg.RedisAddr, cfg.RedisPassword)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to init storage")
+	}
+	defer st.Close()
+
+	r := httphandler.NewRouter(st)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,

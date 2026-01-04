@@ -1,13 +1,17 @@
 package http
 
 import (
+	"github.com/JsotoSoftware/guess-who-game-backend/internal/storage"
 	"github.com/go-chi/chi/v5"
 )
 
-func NewRouter() *chi.Mux {
+func NewRouter(storage storage.Repository) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Get("/healthz", healthCheck)
+	h := NewHandler(storage)
+
+	r.Get("/healthz", h.healthCheck)
+	r.Get("/readyz", h.readyCheck)
 
 	return r
 }

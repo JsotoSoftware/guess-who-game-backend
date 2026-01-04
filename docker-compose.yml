@@ -39,7 +39,16 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  migrate:
+    image: migrate/migrate:latest
+    container_name: character_migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations
 
 volumes:
   pgdata:
   redisdata:
+  migrations:
