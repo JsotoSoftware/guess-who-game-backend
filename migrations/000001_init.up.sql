@@ -113,3 +113,20 @@ CREATE TABLE IF NOT EXISTS room_used_characters (
 );
 
 CREATE INDEX IF NOT EXISTS idx_room_used_characters_room_id ON room_used_characters(room_id);
+
+CREATE TABLE IF NOT EXISTS refresh_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+  token_hash BYTEA NOT NULL UNIQUE, -- sha256(refresh_token)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+
+  user_agent TEXT NOT NULL DEFAULT '',
+  ip TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_sessions_user_id ON refresh_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_sessions_expires_at ON refresh_sessions(expires_at);

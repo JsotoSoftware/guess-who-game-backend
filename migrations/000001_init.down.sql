@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS room_members;
 DROP TABLE IF EXISTS rooms;
 DROP TABLE IF EXISTS user_identities;
 DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS refresh_sessions;
 
 -- Optional: keep pgcrypto extension; if you want to remove it:
 -- DROP EXTENSION IF EXISTS pgcrypto;

@@ -8,11 +8,16 @@ import (
 )
 
 type Config struct {
-	AppEnv        string `envconfig:"APP_ENV" default:"dev"`
-	HTTPAddr      string `envconfig:"HTTP_ADDR" default:":8080"`
+	AppEnv   string `envconfig:"APP_ENV" default:"dev"`
+	HTTPAddr string `envconfig:"HTTP_ADDR" default:":8080"`
+
 	PostgresDSN   string `envconfig:"POSTGRES_DSN" required:"true"`
 	RedisAddr     string `envconfig:"REDIS_ADDR" default:"localhost:6379"`
 	RedisPassword string `envconfig:"REDIS_PASSWORD" default:""`
+
+	JWTSecret    string `envconfig:"JWT_SECRET" required:"true"`
+	CookieSecure bool   `envconfig:"COOKIE_SECURE" default:"false"`
+	CookieDomain string `envconfig:"COOKIE_DOMAIN" default:""`
 }
 
 func Load() (Config, error) {

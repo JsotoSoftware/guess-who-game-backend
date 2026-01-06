@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/JsotoSoftware/guess-who-game-backend/internal/auth"
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/config"
 	httphandler "github.com/JsotoSoftware/guess-who-game-backend/internal/http"
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/storage"
@@ -32,7 +33,12 @@ func main() {
 	}
 	defer st.Close()
 
-	r := httphandler.NewRouter(st)
+	tokens, err := auth.NewTokenMaker(cfg.JWTSecret)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to init token maker")
+	}
+
+	r := httphandler.NewRouter(st, tokens, cfg.CookieSecure, cfg.CookieDomain)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
