@@ -22,5 +22,15 @@ func NewRouter(store *storage.Storage, tokens *auth.TokenMaker, cookieSecure boo
 		r.Post("/logout", ah.Logout)
 	})
 
+	// Protected
+	rh := NewRoomHandlers(store)
+	r.Route("/v1", func(r chi.Router) {
+		r.Use(RequireAuth(tokens))
+
+		r.Post("/rooms", rh.Create)
+		r.Post("/rooms/join", rh.Join)
+		r.Get("/rooms/members", rh.Members)
+	})
+
 	return r
 }
