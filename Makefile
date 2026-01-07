@@ -1,4 +1,4 @@
-.PHONY: run tidy up down logs migrate-up migrate-down migrate-force
+.PHONY: run tidy up down logs migrate-up migrate-down migrate-force import-json
 
 run:
 	@godotenv go run ./cmd/server
@@ -26,3 +26,6 @@ migrate-down:
 
 migrate-force:
 	@powershell -Command "if ([string]::IsNullOrEmpty('$(V)')) { Write-Host 'Error: V (version) is required. Usage: make migrate-force V=1'; exit 1 }; $$dsn = (Get-Content .env | Select-String '^POSTGRES_DSN=').Line -replace '^POSTGRES_DSN=', ''; if ([string]::IsNullOrEmpty($$dsn)) { Write-Host 'Error: POSTGRES_DSN not found in .env file'; exit 1 }; $$dsn = $$dsn -replace 'localhost', 'postgres'; docker compose run --rm migrate -path /migrations -database \"$$dsn\" force $(V)"
+
+import-json:
+	@powershell -Command "if ([string]::IsNullOrEmpty('$(FILE)')) { Write-Host 'Error: FILE is required. Usage: make import-json FILE=path/to/file.json'; exit 1 }; $$dsn = (Get-Content .env | Select-String '^POSTGRES_DSN=').Line -replace '^POSTGRES_DSN=', ''; if ([string]::IsNullOrEmpty($$dsn)) { Write-Host 'Error: POSTGRES_DSN not found in .env file'; exit 1 }; go run ./cmd/jsonimporter --file '$(FILE)' --dsn \"$$dsn\" --lang es --public true"

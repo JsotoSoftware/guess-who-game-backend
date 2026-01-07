@@ -9,11 +9,15 @@ DROP TABLE IF EXISTS room_rounds;
 
 -- Tables that depend on rooms
 DROP TABLE IF EXISTS room_members;
+DROP TABLE IF EXISTS room_pack_selection;
 
 -- Tables that depend on characters
 DROP TABLE IF EXISTS character_translations;
 
 -- Tables that depend on packs
+DROP TABLE IF EXISTS collection_packs;
+DROP TABLE IF EXISTS collection_translations;
+DROP TABLE IF EXISTS collections;
 DROP TABLE IF EXISTS characters;
 DROP TABLE IF EXISTS pack_translations;
 

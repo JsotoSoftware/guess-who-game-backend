@@ -82,6 +82,41 @@ CREATE TABLE IF NOT EXISTS character_translations (
 
 CREATE INDEX IF NOT EXISTS idx_character_translations_lang ON character_translations(lang);
 
+CREATE TABLE IF NOT EXISTS room_pack_selection (
+  room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  pack_id UUID NOT NULL REFERENCES packs(id) ON DELETE CASCADE,
+  selected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (room_id, pack_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_room_pack_selection_room_id ON room_pack_selection(room_id);
+
+-- Collections (meta-packs)
+CREATE TABLE IF NOT EXISTS collections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug TEXT NOT NULL UNIQUE,         -- e.g. "anime"
+  is_public BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS collection_translations (
+  collection_id UUID NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  lang TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (collection_id, lang)
+);
+
+-- Which packs belong to a collection
+CREATE TABLE IF NOT EXISTS collection_packs (
+  collection_id UUID NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  pack_id UUID NOT NULL REFERENCES packs(id) ON DELETE CASCADE,
+  PRIMARY KEY (collection_id, pack_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_packs_collection_id ON collection_packs(collection_id);
+CREATE INDEX IF NOT EXISTS idx_collection_packs_pack_id ON collection_packs(pack_id);
+
 -- Rounds (history + auditing)
 CREATE TABLE IF NOT EXISTS room_rounds (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
