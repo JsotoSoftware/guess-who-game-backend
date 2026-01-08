@@ -25,6 +25,8 @@ func NewRouter(store *storage.Storage, tokens *auth.TokenMaker, cookieSecure boo
 	// Protected
 	rh := NewRoomHandlers(store)
 	ph := NewPacksHandlers(store)
+	ch := NewCollectionsHandlers(store)
+	rhp := NewRoomPacksHandlers(store)
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(RequireAuth(tokens))
@@ -36,6 +38,12 @@ func NewRouter(store *storage.Storage, tokens *auth.TokenMaker, cookieSecure boo
 		r.Get("/packs", ph.List)
 		r.Get("/packs/{slug}", ph.Get)
 		r.Get("/packs/{slug}/characters", ph.Characters)
+
+		r.Get("/collections", ch.List)
+		r.Get("/collections/{slug}/packs", ch.Packs)
+
+		r.Post("/rooms/packs", rhp.Set)
+		r.Get("/rooms/packs", rhp.Get)
 	})
 
 	return r

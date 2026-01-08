@@ -22,14 +22,31 @@ type Input struct {
 	} `json:"items"`
 }
 
+type CollectionsFile struct {
+	Lang        string `json:"lang"`
+	Collections []struct {
+		Slug        string   `json:"slug"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Packs       []string `json:"packs"` // pack slugs
+	} `json:"collections"`
+}
+
 func main() {
 	var (
-		file   = flag.String("file", "", "path to json file")
-		dsn    = flag.String("dsn", "", "postgres dsn")
-		lang   = flag.String("lang", "es", "language for translations (default es)")
-		public = flag.Bool("public", true, "set packs is_public")
+		file        = flag.String("file", "", "path to json file")
+		dsn         = flag.String("dsn", "", "postgres dsn")
+		collections = flag.String("collections", "", "optional collections json mapping file")
+		lang        = flag.String("lang", "es", "language for translations (default es)")
+		public      = flag.Bool("public", true, "set packs is_public")
 	)
 	flag.Parse()
+
+	// Check for unrecognized arguments (common mistake: --public true instead of --public)
+	if len(flag.Args()) > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: Unrecognized arguments: %v\n", flag.Args())
+		fmt.Fprintf(os.Stderr, "Note: Boolean flags like --public don't take values. Use '--public' or '--public=false'\n")
+	}
 
 	if *file == "" || *dsn == "" {
 		fmt.Println("usage: importjson --file <path> --dsn <postgres dsn> [--lang es] [--public true]")
@@ -78,6 +95,38 @@ func main() {
 		}
 
 		fmt.Printf("Imported pack %-24s (%s): %d characters\n", franchise, slug, len(seen))
+	}
+
+	if *collections != "" {
+		cb, err := os.ReadFile(*collections)
+		must(err)
+
+		var cf CollectionsFile
+		must(json.Unmarshal(cb, &cf))
+
+		cLang := cf.Lang
+		if cLang == "" {
+			cLang = *lang
+		}
+
+		fmt.Printf("Importing collections: %d\n", len(cf.Collections))
+
+		for _, col := range cf.Collections {
+			colID := upsertCollection(ctx, pool, col.Slug, true)
+			upsertCollectionTranslation(ctx, pool, colID, cLang, col.Name, col.Description)
+
+			for _, packSlug := range col.Packs {
+				packID, err := getPackIDBySlug(ctx, pool, packSlug)
+				if err != nil {
+					fmt.Printf("  WARN: pack slug not found: %s (skipping)\n", packSlug)
+					continue
+				}
+				linkCollectionPack(ctx, pool, colID, packID)
+			}
+			fmt.Printf("Imported collection %s (%s)\n", col.Name, col.Slug)
+		}
+	} else {
+		fmt.Println("No collections path provided, skipping collections import")
 	}
 
 	fmt.Println("done")
@@ -152,4 +201,42 @@ func slugify(s string) string {
 		s = fmt.Sprintf("pack_%d", time.Now().Unix())
 	}
 	return s
+}
+
+func upsertCollection(ctx context.Context, db *pgxpool.Pool, slug string, isPublic bool) string {
+	var id string
+	err := db.QueryRow(ctx, `
+		INSERT INTO collections (slug, is_public, created_at)
+		VALUES ($1, $2, now())
+		ON CONFLICT (slug) DO UPDATE SET is_public = EXCLUDED.is_public
+		RETURNING id
+	`, slug, isPublic).Scan(&id)
+	must(err)
+	return id
+}
+
+func upsertCollectionTranslation(ctx context.Context, db *pgxpool.Pool, colID, lang, name, desc string) {
+	_, err := db.Exec(ctx, `
+		INSERT INTO collection_translations (collection_id, lang, name, description)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (collection_id, lang) DO UPDATE SET
+			name = EXCLUDED.name,
+			description = EXCLUDED.description
+	`, colID, lang, name, desc)
+	must(err)
+}
+
+func getPackIDBySlug(ctx context.Context, db *pgxpool.Pool, slug string) (string, error) {
+	var id string
+	err := db.QueryRow(ctx, `SELECT id FROM packs WHERE slug=$1`, slug).Scan(&id)
+	return id, err
+}
+
+func linkCollectionPack(ctx context.Context, db *pgxpool.Pool, colID, packID string) {
+	_, err := db.Exec(ctx, `
+		INSERT INTO collection_packs (collection_id, pack_id)
+		VALUES ($1, $2)
+		ON CONFLICT DO NOTHING
+	`, colID, packID)
+	must(err)
 }
