@@ -224,13 +224,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				lang = "es"
 			}
 
-			// Determine currently connected players (exclude host)
+			// Determine currently connected players (include host and all players)
 			room.mu.Lock()
-			var playerIDs []string
-			for uid, c := range room.conns {
-				if c.Role() == "player" {
-					playerIDs = append(playerIDs, uid)
-				}
+			playerIDs := make([]string, 0, len(room.conns))
+			for uid := range room.conns {
+				playerIDs = append(playerIDs, uid)
 			}
 			room.mu.Unlock()
 
