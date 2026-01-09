@@ -12,6 +12,7 @@ import (
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/config"
 	httphandler "github.com/JsotoSoftware/guess-who-game-backend/internal/http"
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/storage"
+	"github.com/JsotoSoftware/guess-who-game-backend/internal/ws"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -38,7 +39,10 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to init token maker")
 	}
 
-	r := httphandler.NewRouter(st, tokens, cfg.CookieSecure, cfg.CookieDomain)
+	hub := ws.NewHub()
+	wsHandler := ws.NewHandler(hub, st, tokens)
+
+	r := httphandler.NewRouter(st, tokens, cfg.CookieSecure, cfg.CookieDomain, wsHandler)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,

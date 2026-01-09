@@ -127,3 +127,14 @@ func (s *Storage) ListRoomMembers(ctx context.Context, roomID string) ([]RoomMem
 	}
 	return out, rows.Err()
 }
+
+func (s *Storage) UpsertRoomMember(ctx context.Context, roomID, userID, displayName, role string) error {
+	_, err := s.PG.Exec(ctx, `
+		INSERT INTO room_members (room_id, user_id, display_name, role, score)
+		VALUES ($1, $2, $3, $4, 0)
+		ON CONFLICT (room_id, user_id) DO UPDATE
+		SET display_name = EXCLUDED.display_name,
+		    role = EXCLUDED.role
+	`, roomID, userID, displayName, role)
+	return err
+}

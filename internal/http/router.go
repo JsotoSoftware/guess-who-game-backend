@@ -3,16 +3,20 @@ package http
 import (
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/auth"
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/storage"
+	"github.com/JsotoSoftware/guess-who-game-backend/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 
-func NewRouter(store *storage.Storage, tokens *auth.TokenMaker, cookieSecure bool, cookieDomain string) *chi.Mux {
+func NewRouter(store *storage.Storage, tokens *auth.TokenMaker, cookieSecure bool, cookieDomain string, wsHandler *ws.Handler) *chi.Mux {
 	r := chi.NewRouter()
 
 	h := NewHandler(store)
 
 	r.Get("/healthz", h.healthCheck)
 	r.Get("/readyz", h.readyCheck)
+
+	// WebSocket handler
+	r.Get("/ws", wsHandler.ServeHTTP)
 
 	// Auth handlers
 	ah := NewAuthHandlers(store, tokens, cookieSecure, cookieDomain)
