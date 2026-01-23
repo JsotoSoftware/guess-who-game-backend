@@ -65,7 +65,6 @@ func (tm *TokenMaker) ParseAccessToken(token string) (*AccessClaims, error) {
 	return c, nil
 }
 
-// Refresh tokens are random opaque strings (NOT JWT), stored server-side by hash.
 func NewRefreshToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

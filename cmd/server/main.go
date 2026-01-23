@@ -40,6 +40,14 @@ func main() {
 	}
 
 	hub := ws.NewHub()
+
+	stopSweeper := ws.StartSweeper(hub, ws.SweeperConfig{
+		ConnIdleTimeout: 30 * time.Second,
+		RoomIdleTimeout: 40 * time.Second,
+		Tick:            10 * time.Second,
+	})
+	defer stopSweeper()
+
 	wsHandler := ws.NewHandler(hub, st, tokens)
 
 	r := httphandler.NewRouter(st, tokens, cfg.CookieSecure, cfg.CookieDomain, wsHandler)
@@ -47,8 +55,8 @@ func main() {
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,
 		Handler:      r,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  0,
+		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,
 	}
 

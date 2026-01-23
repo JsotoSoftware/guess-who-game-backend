@@ -58,7 +58,6 @@ func (h *RoomPacksHandlers) Set(w http.ResponseWriter, r *http.Request) {
 
 	packSlugs := req.PackSlugs
 	if req.CollectionSlug != "" {
-		// expand collection -> pack slugs
 		packs, err := h.Store.ListPacksForCollection(ctx, req.CollectionSlug, "es")
 		if err != nil {
 			http.Error(w, "failed", http.StatusInternalServerError)

@@ -28,7 +28,7 @@ type CollectionsFile struct {
 		Slug        string   `json:"slug"`
 		Name        string   `json:"name"`
 		Description string   `json:"description"`
-		Packs       []string `json:"packs"` // pack slugs
+		Packs       []string `json:"packs"`
 	} `json:"collections"`
 }
 
@@ -42,7 +42,6 @@ func main() {
 	)
 	flag.Parse()
 
-	// Check for unrecognized arguments (common mistake: --public true instead of --public)
 	if len(flag.Args()) > 0 {
 		fmt.Fprintf(os.Stderr, "Warning: Unrecognized arguments: %v\n", flag.Args())
 		fmt.Fprintf(os.Stderr, "Note: Boolean flags like --public don't take values. Use '--public' or '--public=false'\n")
@@ -64,7 +63,6 @@ func main() {
 	must(err)
 	defer pool.Close()
 
-	// group by franchise -> list of names
 	byFranchise := map[string][]string{}
 	for _, it := range in.Items {
 		f := strings.TrimSpace(it.Franchise)
@@ -133,7 +131,6 @@ func main() {
 }
 
 func upsertPack(ctx context.Context, db *pgxpool.Pool, slug string, isPublic bool) string {
-	// keep version=1 for now; later we can bump version on changes
 	var id string
 	err := db.QueryRow(ctx, `
 		INSERT INTO packs (slug, version, is_public, created_at)
@@ -189,7 +186,6 @@ var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
 func slugify(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.ReplaceAll(s, "ñ", "n")
-	// quick normalize for common accents (good enough for slugs)
 	repl := strings.NewReplacer(
 		"á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u",
 		"ü", "u",

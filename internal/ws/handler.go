@@ -72,10 +72,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		OriginPatterns: []string{"*"},
 	})
 	if err != nil {
+		log.Warn().Str("user", userID).Err(err).Msg("ws: failed to accept connection")
 		return
 	}
 	defer c.Close(websocket.StatusInternalError, "server error")
 
+	log.Info().Str("user", userID).Msg("ws: connection established")
+
+	readCtx := r.Context()
 	ctx := r.Context()
 
 	type tmpConn struct {
@@ -83,7 +87,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	read := func() ([]byte, error) {
-		_, b, err := c.Read(ctx)
+		_, b, err := c.Read(readCtx)
 		return b, err
 	}
 
@@ -97,16 +101,31 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		b, err := read()
 		if err != nil {
+			log.Info().
+				Str("user", userID).
+				Str("room", roomCode).
+				Err(err).
+				Msg("ws: read error, closing connection")
 			break
 		}
 
+		log.Debug().Str("user", userID).Int("bytes", len(b)).Str("raw", string(b)).Msg("ws: raw message received")
+
 		var env Envelope
 		if err := json.Unmarshal(b, &env); err != nil {
+			log.Warn().Str("user", userID).Str("room", roomCode).Err(err).Str("raw", string(b)).Msg("ws: received invalid JSON")
 			_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
 				"type": "error", "payload": map[string]any{"message": "bad json"},
 			}))
 			continue
 		}
+
+		log.Info().
+			Str("user", userID).
+			Str("room", roomCode).
+			Str("type", env.Type).
+			Int("payloadLen", len(env.Payload)).
+			Msg("ws: message received")
 
 		switch env.Type {
 
@@ -138,11 +157,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Upsert membership from WS (no HTTP join required)
 			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
 			err = h.Store.UpsertRoomMember(dbCtx, roomObj.ID, userID, p.DisplayName, p.Role)
-			_ = h.Store.TouchRoomActivity(dbCtx, roomObj.ID) // best-effort
+			_ = h.Store.TouchRoomActivity(dbCtx, roomObj.ID)
 			if err != nil {
 				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
 					"type": "error", "payload": map[string]any{"message": "failed to join room"},
@@ -150,36 +168,30 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Save session vars for the connection
 			roomCode = p.Code
 			roomID = roomObj.ID
 			role = p.Role
 			displayName = p.DisplayName
 
-			// Wrap connection with single-writer (only after successful join)
-			wsconn = NewWSConn(ctx, c, userID, role, displayName)
+			wsconn = NewWSConn(c, userID, role, displayName)
 
-			// Register in hub
 			room = h.Hub.GetRoom(roomCode)
 			room.Register(wsconn)
 
-			// Refresh member states from DB (authoritative: displayName/role/score)
 			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
 			members, _ := h.Store.ListRoomMembers(dbCtx, roomID)
 
-			// Update hub presence cache
 			for _, m := range members {
 				room.UpsertMemberState(MemberState{
 					UserID:      m.UserID,
 					DisplayName: m.DisplayName,
 					Role:        m.Role,
 					Score:       m.Score,
-					Connected:   false, // set below
+					Connected:   false,
 				})
 			}
 
-			// Mark connected for current hub conns
 			room.mu.Lock()
 			for uid, ms := range room.members {
 				_, ok := room.conns[uid]
@@ -188,7 +200,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			room.mu.Unlock()
 
-			// Reply joined
 			_ = wsconn.Send(map[string]any{
 				"type": "room:joined",
 				"payload": map[string]any{
@@ -199,7 +210,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				},
 			})
 
-			// Broadcast presence
 			room.BroadcastPresence()
 
 		case "host:start_round":
@@ -215,8 +225,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 			var p StartRoundPayload
-			if err := json.Unmarshal(env.Payload, &p); err != nil || p.Code == "" {
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "invalid payload"}})
+			if err := json.Unmarshal(env.Payload, &p); err != nil {
+				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "invalid payload: " + err.Error()}})
+				continue
+			}
+			if p.Code == "" {
+				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "code is required"}})
 				continue
 			}
 			lang := p.Lang
@@ -224,7 +238,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				lang = "es"
 			}
 
-			// Determine currently connected players (include host and all players)
 			room.mu.Lock()
 			playerIDs := make([]string, 0, len(room.conns))
 			for uid := range room.conns {
@@ -232,13 +245,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			room.mu.Unlock()
 
+			if len(playerIDs) == 0 {
+				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "no players connected"}})
+				continue
+			}
+
 			dbCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 			defer cancel()
 
 			roundID, assigns, err := h.Store.StartRoundAssignCharacters(dbCtx, roomID, lang, playerIDs)
 			if err != nil {
-				msg := err.Error()
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": msg}})
+				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "failed to start round: " + err.Error()}})
 				continue
 			}
 
@@ -267,21 +284,42 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 
-			// Broadcast presence again (not necessary, but useful to keep UI synced)
+			_ = wsconn.Send(map[string]any{
+				"type": "host:round_started",
+				"payload": map[string]any{
+					"roundId":     roundID,
+					"playerCount": len(assigns),
+					"lang":        lang,
+				},
+			})
+
 			room.BroadcastPresence()
 
 		case "host:score_add":
 			if wsconn == nil || room == nil {
+				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
+					"type": "error", "payload": map[string]any{"message": "must join first"},
+				}))
 				continue
 			}
 			if role != "host" {
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "host only"}})
+				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
+					"type": "error", "payload": map[string]any{"message": "host only"},
+				}))
 				continue
 			}
 
 			var p ScoreAddPayload
-			if err := json.Unmarshal(env.Payload, &p); err != nil || p.UserID == "" || p.Delta == 0 {
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "invalid payload"}})
+			if err := json.Unmarshal(env.Payload, &p); err != nil {
+				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
+					"type": "error", "payload": map[string]any{"message": "invalid payload: " + err.Error()},
+				}))
+				continue
+			}
+			if p.UserID == "" || p.Delta == 0 {
+				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
+					"type": "error", "payload": map[string]any{"message": "userId and delta required, delta must be non-zero"},
+				}))
 				continue
 			}
 
@@ -289,11 +327,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			defer cancel()
 
 			if err := h.Store.AddMemberScore(dbCtx, roomID, p.UserID, p.Delta); err != nil {
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "score update failed"}})
+				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
+					"type": "error", "payload": map[string]any{"message": "score update failed: " + err.Error()},
+				}))
 				continue
 			}
 
-			// Refresh member states from DB (simple + consistent)
 			members, _ := h.Store.ListRoomMembersWithConnectionHint(dbCtx, roomID)
 			for _, m := range members {
 				room.UpsertMemberState(MemberState{
@@ -301,10 +340,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					DisplayName: m.DisplayName,
 					Role:        m.Role,
 					Score:       m.Score,
-					Connected:   true, // will be corrected below
+					Connected:   true,
 				})
 			}
-			// Mark connected based on hub
 			room.mu.Lock()
 			for uid := range room.members {
 				_, ok := room.conns[uid]
@@ -318,14 +356,32 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			room.mu.Unlock()
 
+			_ = wsconn.Send(map[string]any{
+				"type": "host:score_added",
+				"payload": map[string]any{
+					"userId": p.UserID,
+					"delta":  p.Delta,
+				},
+			})
+
 			room.BroadcastPresence()
 
+		case "client:ping":
+			if wsconn != nil {
+				_ = wsconn.Send(map[string]any{"type": "server:pong", "payload": map[string]any{"ts": time.Now().UnixMilli()}})
+			} else {
+				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{"type": "server:pong"}))
+			}
+
 		default:
-			// ignore unknown
+			log.Debug().Str("user", userID).Str("type", env.Type).Msg("ws: unknown message type, ignoring")
+		}
+
+		if wsconn != nil {
+			wsconn.Touch()
 		}
 	}
 
-	// Disconnect cleanup
 	if room != nil {
 		room.Unregister(userID)
 		room.SetConnected(userID, false)
@@ -336,5 +392,5 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c.Close(websocket.StatusNormalClosure, "bye")
-	log.Info().Str("user", userID).Str("room", roomCode).Msg("ws disconnected")
+	log.Info().Str("user", userID).Str("room", roomCode).Msg("ws: connection closed")
 }

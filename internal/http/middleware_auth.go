@@ -26,8 +26,7 @@ func RequireAuth(tokens *auth.TokenMaker) func(http.Handler) http.Handler {
 				http.Error(w, "missing bearer token", http.StatusUnauthorized)
 				return
 			}
-			// Extract token after "bearer " (case-insensitive)
-			raw := strings.TrimSpace(h[7:]) // "bearer " is 7 characters
+			raw := strings.TrimSpace(h[7:])
 
 			claims, err := tokens.ParseAccessToken(raw)
 			if err != nil || claims.UserID == "" {

@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guess Who Game - Test Client</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #4CAF50;
+            margin-bottom: 20px;
+        }
+        .section {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #3a3a3a;
+        }
+        .section h2 {
+            color: #64B5F6;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        .row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .col {
+            flex: 1;
+            min-width: 200px;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover:not(:disabled) {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        button.danger:hover:not(:disabled) {
+            background: #da190b;
+        }
+        button.warning {
+            background: #ff9800;
+        }
+        button.warning:hover:not(:disabled) {
+            background: #e68900;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #4CAF50;
+            color: white;
+        }
+        .status.disconnected {
+            background: #f44336;
+            color: white;
+        }
+        .status.connecting {
+            background: #ff9800;
+            color: white;
+        }
+        .log {
+            background: #1a1a1a;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            padding: 15px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 0;
+        }
+        .log-entry.sent {
+            color: #64B5F6;
+        }
+        .log-entry.received {
+            color: #81C784;
+        }
+        .log-entry.error {
+            color: #e57373;
+        }
+        .log-entry.info {
+            color: #FFB74D;
+        }
+        .info-box {
+            background: #1e3a5f;
+            border-left: 4px solid #2196F3;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .test-section {
+            background: #2a2a2a;
+            padding: 15px;
+            margin-top: 15px;
+            border-radius: 4px;
+            border: 1px solid #3a3a3a;
+        }
+        .test-section h3 {
+            color: #FFB74D;
+            margin-bottom: 10px;
+        }
+        .timer {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FFB74D;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Guess Who Game - Test Client</h1>
+
+        <!-- Configuration -->
+        <div class="section">
+            <h2>Configuration</h2>
+            <div class="row">
+                <div class="col">
+                    <label>API Base URL:</label>
+                    <input type="text" id="apiUrl" value="http://localhost:8080" placeholder="http://localhost:8080">
+                </div>
+                <div class="col">
+                    <label>Display Name:</label>
+                    <input type="text" id="displayName" value="TestUser" placeholder="Your display name">
+                </div>
+                <div class="col">
+                    <label>Role:</label>
+                    <select id="role">
+                        <option value="player">Player</option>
+                        <option value="host">Host</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col">
+                    <button id="authBtn" onclick="authenticate()">1. Authenticate (Guest)</button>
+                </div>
+                <div class="col">
+                    <button id="connectBtn" onclick="connectWS()" disabled>2. Connect WebSocket</button>
+                </div>
+                <div class="col">
+                    <button id="disconnectBtn" onclick="disconnectWS()" disabled class="danger">Disconnect</button>
+                </div>
+            </div>
+            <div id="authStatus" class="status disconnected">Not Authenticated</div>
+            <div id="wsStatus" class="status disconnected">Disconnected</div>
+        </div>
+
+        <!-- Room Management -->
+        <div class="section">
+            <h2>Room Management</h2>
+            <div class="row">
+                <div class="col">
+                    <label>Room Code:</label>
+                    <input type="text" id="roomCode" placeholder="Enter room code or create new">
+                </div>
+                <div class="col">
+                    <button onclick="createRoom()" id="createRoomBtn" disabled>Create Room</button>
+                </div>
+                <div class="col">
+                    <button onclick="joinRoom()" id="joinRoomBtn" disabled>Join Room (WS)</button>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col">
+                    <button onclick="getRoomState()" id="getStateBtn" disabled>Get Room State (HTTP)</button>
+                </div>
+                <div class="col">
+                    <button onclick="getRoomMembers()" id="getMembersBtn" disabled>Get Members (HTTP)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- WebSocket Messages -->
+        <div class="section">
+            <h2>WebSocket Messages</h2>
+            <div class="row">
+                <div class="col">
+                    <label>Message Type:</label>
+                    <select id="msgType">
+                        <option value="client:ping">client:ping</option>
+                        <option value="host:start_round">host:start_round</option>
+                        <option value="host:score_add">host:score_add</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <label>Payload (JSON):</label>
+                    <input type="text" id="msgPayload" placeholder='{"code":"ABC123","lang":"es"}' value='{"code":"","lang":"es"}'>
+                </div>
+                <div class="col">
+                    <button onclick="sendMessage()" id="sendBtn" disabled>Send Message</button>
+                </div>
+            </div>
+            <div class="row" style="margin-top: 10px;">
+                <div class="col">
+                    <button onclick="testConnection()" id="testConnBtn" disabled class="warning" style="width: auto;">Test Connection (Send Ping)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Testing Scenarios -->
+        <div class="section">
+            <h2>🧪 Test Scenarios</h2>
+            
+            <div class="test-section">
+                <h3>Test 1: Connection Timeout (30s idle)</h3>
+                <p>Connect and stop sending pings. Connection should be dropped after 30 seconds.</p>
+                <button onclick="testIdleTimeout()" id="testIdleBtn" disabled>Start Test</button>
+                <div id="idleTimer" class="timer"></div>
+            </div>
+
+            <div class="test-section">
+                <h3>Test 2: Reconnection</h3>
+                <p>Connect, disconnect, then reconnect. Old connection should be replaced and presence should update.</p>
+                <button onclick="testReconnect()" id="testReconnectBtn" disabled>Start Test</button>
+            </div>
+
+            <div class="test-section">
+                <h3>Test 3: Room Cleanup (40s idle)</h3>
+                <p>Create room, leave all clients, wait 40+ seconds. Room should be removed from hub memory.</p>
+                <div class="info-box">
+                    <strong>Note:</strong> This test requires waiting 40 seconds. The sweeper runs every 10 seconds.
+                    Room timeout is 40 seconds, connection timeout is 30 seconds.
+                </div>
+                <button onclick="testRoomCleanup()" id="testCleanupBtn" disabled>Start Test</button>
+                <div id="cleanupTimer" class="timer"></div>
+            </div>
+
+            <div class="test-section">
+                <h3>Test 4: Room State Consistency</h3>
+                <p>Test that GET /v1/rooms/state returns consistent snapshot matching WebSocket presence.</p>
+                <button onclick="testStateConsistency()" id="testStateBtn" disabled>Start Test</button>
+            </div>
+        </div>
+
+        <!-- Message Log -->
+        <div class="section">
+            <h2>Message Log</h2>
+            <button onclick="clearLog()" class="warning" style="width: auto; margin-bottom: 10px;">Clear Log</button>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let accessToken = null;
+        let ws = null;
+        let pingInterval = null;
+        let uiSyncInterval = null;
+        let idleTestStart = null;
+        let idleTestInterval = null;
+        let cleanupTestStart = null;
+        let cleanupTestInterval = null;
+        let currentRoomCode = null;
+
+        const API_URL = () => document.getElementById('apiUrl').value;
+
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            if (!logEl) {
+                console.error('Log element not found!');
+                return;
+            }
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            // Also log to console
+            console.log(`[${type}] ${message}`);
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function updateStatus(elementId, status, text) {
+            const el = document.getElementById(elementId);
+            el.className = `status ${status}`;
+            el.textContent = text;
+        }
+
+        function syncUiState() {
+            const wsOpen = !!(ws && ws.readyState === WebSocket.OPEN);
+
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const joinRoomBtn = document.getElementById('joinRoomBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            const testConnBtn = document.getElementById('testConnBtn');
+
+            if (connectBtn) connectBtn.disabled = !accessToken || wsOpen;
+            if (disconnectBtn) disconnectBtn.disabled = !wsOpen;
+            if (joinRoomBtn) joinRoomBtn.disabled = !wsOpen;
+            if (sendBtn) sendBtn.disabled = !wsOpen;
+            if (testConnBtn) testConnBtn.disabled = !wsOpen;
+        }
+
+        async function authenticate() {
+            try {
+                log('Authenticating as guest...', 'info');
+                const response = await fetch(`${API_URL()}/v1/auth/guest`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Auth failed: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                accessToken = data.accessToken;
+                updateStatus('authStatus', 'connected', 'Authenticated');
+                document.getElementById('authBtn').disabled = true;
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('createRoomBtn').disabled = false;
+                document.getElementById('getStateBtn').disabled = false;
+                document.getElementById('getMembersBtn').disabled = false;
+                log(`✓ Authenticated. Token (${accessToken}) expires at: ${new Date(data.expiresAt).toLocaleString()}`, 'info');
+                syncUiState();
+            } catch (error) {
+                log(`✗ Auth error: ${error.message}`, 'error');
+                updateStatus('authStatus', 'disconnected', 'Auth Failed');
+            }
+        }
+
+        function connectWS() {
+            if (!accessToken) {
+                log('Please authenticate first', 'error');
+                return;
+            }
+
+            const wsUrl = API_URL().replace('http://', 'ws://').replace('https://', 'wss://');
+            const url = `${wsUrl}/ws?access_token=${accessToken}`;
+            
+            log(`Connecting to ${url}...`, 'info');
+            updateStatus('wsStatus', 'connecting', 'Connecting...');
+            
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                log('✓ WebSocket connected', 'info');
+                console.log('WebSocket opened, readyState:', ws.readyState);
+                updateStatus('wsStatus', 'connected', 'Connected');
+                syncUiState();
+                log(`UI: sendBtn.disabled=${document.getElementById('sendBtn')?.disabled}`, 'info');
+                document.getElementById('testIdleBtn').disabled = false;
+                document.getElementById('testReconnectBtn').disabled = false;
+                document.getElementById('testCleanupBtn').disabled = false;
+                document.getElementById('testStateBtn').disabled = false;
+                
+                // Start ping interval
+                startPing();
+            };
+
+            ws.onmessage = (event) => {
+                // Debug: log to console as well
+                console.log('WebSocket message received:', event.data);
+                
+                try {
+                    const msg = JSON.parse(event.data);
+                    // Format message nicely for display
+                    const formatted = JSON.stringify(msg, null, 2);
+                    log(`← Received [${msg.type || 'unknown'}]:\n${formatted}`, 'received');
+                    
+                    // Also log to console for debugging
+                    console.log('Parsed message:', msg);
+                    
+                    if (msg.type === 'room:joined') {
+                        currentRoomCode = msg.payload?.code;
+                        if (currentRoomCode) {
+                            document.getElementById('roomCode').value = currentRoomCode;
+                        }
+                    }
+                    
+                    // Show success/error messages prominently
+                    if (msg.type === 'error') {
+                        log(`⚠️ ERROR: ${msg.payload?.message || 'Unknown error'}`, 'error');
+                        console.error('WebSocket error:', msg.payload?.message);
+                    } else if (msg.type === 'host:score_added') {
+                        log(`✓ Score updated successfully!`, 'info');
+                        console.log('Score added:', msg.payload);
+                    } else if (msg.type === 'host:round_started') {
+                        log(`✓ Round started successfully! Round ID: ${msg.payload?.roundId}, Players: ${msg.payload?.playerCount}`, 'info');
+                        console.log('Round started:', msg.payload);
+                    } else if (msg.type === 'round:assigned') {
+                        log(`✓ Received character assignments for round ${msg.payload?.roundId}`, 'info');
+                        console.log('Round assigned:', msg.payload);
+                    } else if (msg.type === 'server:pong') {
+                        log(`✓ Pong received`, 'info');
+                    } else if (msg.type === 'room:presence') {
+                        log(`✓ Presence update received`, 'info');
+                    }
+                } catch (e) {
+                    log(`← Received (raw): ${event.data}`, 'received');
+                    console.error('Failed to parse message:', e, event.data);
+                }
+            };
+
+            ws.onerror = (error) => {
+                log(`✗ WebSocket error: ${error}`, 'error');
+                console.error('WebSocket error:', error);
+                updateStatus('wsStatus', 'disconnected', 'Error');
+                syncUiState();
+            };
+
+            ws.onclose = (event) => {
+                log(`✗ WebSocket disconnected (code: ${event.code}, reason: ${event.reason || 'none'})`, 'info');
+                console.log('WebSocket closed:', event.code, event.reason, event.wasClean);
+                updateStatus('wsStatus', 'disconnected', 'Disconnected');
+                syncUiState();
+                stopPing();
+            };
+        }
+
+        function disconnectWS() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function startPing() {
+            if (pingInterval) clearInterval(pingInterval);
+            pingInterval = setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    sendWSMessage({ type: 'client:ping' });
+                }
+            }, 10000); // Ping every 10 seconds
+        }
+
+        function stopPing() {
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = null;
+            }
+        }
+
+        function sendWSMessage(message) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected', 'error');
+                console.error('Cannot send: WebSocket not connected. State:', ws ? ws.readyState : 'null');
+                return;
+            }
+            const json = JSON.stringify(message);
+            ws.send(json);
+            log(`→ Sent: ${json}`, 'sent');
+            console.log('WebSocket sent:', json);
+        }
+
+        async function createRoom() {
+            if (!accessToken) {
+                log('Please authenticate first', 'error');
+                return;
+            }
+            try {
+                log('Creating room...', 'info');
+                const response = await fetch(`${API_URL()}/v1/rooms`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                if (!response.ok) throw new Error(`Failed: ${response.statusText}`);
+                const data = await response.json();
+                document.getElementById('roomCode').value = data.code;
+                currentRoomCode = data.code;
+                log(`✓ Room created: ${data.code}`, 'info');
+            } catch (error) {
+                log(`✗ Create room error: ${error.message}`, 'error');
+            }
+        }
+
+        function joinRoom() {
+            const code = document.getElementById('roomCode').value;
+            const displayName = document.getElementById('displayName').value;
+            const role = document.getElementById('role').value;
+            
+            if (!code || !displayName) {
+                log('Please enter room code and display name', 'error');
+                return;
+            }
+            
+            sendWSMessage({
+                type: 'room:join',
+                payload: {
+                    code: code,
+                    displayName: displayName,
+                    role: role
+                }
+            });
+        }
+
+        function testConnection() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected. State: ' + (ws ? ws.readyState : 'null'), 'error');
+                return;
+            }
+            log('Testing connection by sending ping...', 'info');
+            sendWSMessage({ type: 'client:ping' });
+        }
+
+        function sendMessage() {
+            const type = document.getElementById('msgType').value;
+            let payload = {};
+            
+            try {
+                const payloadStr = document.getElementById('msgPayload').value;
+                if (payloadStr) {
+                    payload = JSON.parse(payloadStr);
+                }
+                
+                // Auto-fill room code if available
+                if (currentRoomCode && !payload.code) {
+                    payload.code = currentRoomCode;
+                    document.getElementById('msgPayload').value = JSON.stringify(payload);
+                }
+            } catch (e) {
+                log(`Invalid JSON payload: ${e.message}`, 'error');
+                return;
+            }
+            
+            log(`Sending message: ${type}`, 'info');
+            sendWSMessage({ type, payload });
+        }
+
+        async function getRoomState() {
+            const code = document.getElementById('roomCode').value || currentRoomCode;
+            if (!code) {
+                log('Please enter room code', 'error');
+                return;
+            }
+            if (!accessToken) {
+                log('Please authenticate first', 'error');
+                return;
+            }
+            
+            try {
+                log(`Fetching room state for ${code}...`, 'info');
+                const response = await fetch(`${API_URL()}/v1/rooms/state?code=${code}`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                if (!response.ok) throw new Error(`Failed: ${response.statusText}`);
+                const data = await response.json();
+                log(`✓ Room State: ${JSON.stringify(data, null, 2)}`, 'info');
+            } catch (error) {
+                log(`✗ Get state error: ${error.message}`, 'error');
+            }
+        }
+
+        async function getRoomMembers() {
+            const code = document.getElementById('roomCode').value || currentRoomCode;
+            if (!code) {
+                log('Please enter room code', 'error');
+                return;
+            }
+            if (!accessToken) {
+                log('Please authenticate first', 'error');
+                return;
+            }
+            
+            try {
+                log(`Fetching members for ${code}...`, 'info');
+                const response = await fetch(`${API_URL()}/v1/rooms/members?code=${code}`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                if (!response.ok) throw new Error(`Failed: ${response.statusText}`);
+                const data = await response.json();
+                log(`✓ Members: ${JSON.stringify(data, null, 2)}`, 'info');
+            } catch (error) {
+                log(`✗ Get members error: ${error.message}`, 'error');
+            }
+        }
+
+        // Test Scenarios
+        function testIdleTimeout() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Please connect WebSocket first', 'error');
+                return;
+            }
+            
+            log('🧪 Starting idle timeout test. Stopping pings...', 'info');
+            stopPing();
+            idleTestStart = Date.now();
+            
+            idleTestInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - idleTestStart) / 1000);
+                const remaining = 30 - elapsed;
+                document.getElementById('idleTimer').textContent = 
+                    `Time idle: ${elapsed}s / 30s (${remaining}s until expected timeout)`;
+                
+                if (ws.readyState !== WebSocket.OPEN) {
+                    clearInterval(idleTestInterval);
+                    document.getElementById('idleTimer').textContent = 
+                        `✓ Connection closed after ${elapsed} seconds`;
+                    log(`✓ Test complete: Connection closed after ${elapsed} seconds`, 'info');
+                    startPing(); // Restart pings
+                }
+            }, 1000);
+        }
+
+        async function testReconnect() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Please connect WebSocket first', 'error');
+                return;
+            }
+            
+            log('🧪 Starting reconnection test...', 'info');
+            const code = document.getElementById('roomCode').value || currentRoomCode;
+            const displayName = document.getElementById('displayName').value;
+            const role = document.getElementById('role').value;
+            
+            if (!code) {
+                log('Please join a room first', 'error');
+                return;
+            }
+            
+            // Step 1: Disconnect
+            log('Step 1: Disconnecting...', 'info');
+            disconnectWS();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Step 2: Reconnect
+            log('Step 2: Reconnecting...', 'info');
+            connectWS();
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Step 3: Rejoin
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Step 3: Rejoining room...', 'info');
+                sendWSMessage({
+                    type: 'room:join',
+                    payload: { code, displayName, role }
+                });
+                log('✓ Reconnection test complete. Check presence updates.', 'info');
+            }
+        }
+
+        function testRoomCleanup() {
+            log('🧪 Starting room cleanup test...', 'info');
+            log('⚠️ This test requires waiting 40 seconds. Room will be cleaned up after 40s of inactivity.', 'info');
+            log('⚠️ Connection will timeout after 30 seconds without pings.', 'info');
+            
+            cleanupTestStart = Date.now();
+            cleanupTestInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - cleanupTestStart) / 1000);
+                const remaining = 40 - elapsed;
+                document.getElementById('cleanupTimer').textContent = 
+                    `Elapsed: ${elapsed}s / 40s (${remaining > 0 ? remaining + 's remaining' : 'timeout reached'})`;
+                
+                if (elapsed >= 40) {
+                    clearInterval(cleanupTestInterval);
+                    document.getElementById('cleanupTimer').textContent = 
+                        `✓ 40 seconds elapsed. Room should be cleaned up.`;
+                    log('✓ Test complete: 40 seconds elapsed. Check if room was cleaned up.', 'info');
+                }
+            }, 1000);
+        }
+
+        async function testStateConsistency() {
+            const code = document.getElementById('roomCode').value || currentRoomCode;
+            if (!code) {
+                log('Please join a room first', 'error');
+                return;
+            }
+            
+            log('🧪 Testing room state consistency...', 'info');
+            log('Step 1: Getting room state via HTTP...', 'info');
+            await getRoomState();
+            
+            log('Step 2: Check WebSocket presence messages above for comparison', 'info');
+            log('✓ Compare HTTP state with WebSocket presence. They should match.', 'info');
+        }
+
+        // Auto-authenticate on load
+        window.addEventListener('load', () => {
+            log('Test client loaded. Click "Authenticate" to begin.', 'info');
+            // Prevent UI buttons getting stuck disabled/enabled.
+            uiSyncInterval = setInterval(syncUiState, 500);
+            syncUiState();
+        });
+    </script>
+</body>
+</html>

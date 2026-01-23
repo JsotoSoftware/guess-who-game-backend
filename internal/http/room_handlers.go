@@ -24,6 +24,11 @@ type createRoomResp struct {
 	Code string `json:"code"`
 }
 
+type joinRoomReq struct {
+	Code        string `json:"code"`
+	DisplayName string `json:"displayName"`
+}
+
 func NewRoomHandlers(store *storage.Storage) *RoomsHandlers {
 	return &RoomsHandlers{
 		Store: store,
@@ -72,11 +77,6 @@ func (h *RoomsHandlers) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Error(w, "could not create room after retries", http.StatusInternalServerError)
-}
-
-type joinRoomReq struct {
-	Code        string `json:"code"`
-	DisplayName string `json:"displayName"`
 }
 
 func (h *RoomsHandlers) Join(w http.ResponseWriter, r *http.Request) {
@@ -165,4 +165,51 @@ func (h *RoomsHandlers) Members(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, members)
+}
+
+func (h *RoomsHandlers) GetRoomStats(w http.ResponseWriter, r *http.Request) {
+	_, ok := UserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "missing code", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	room, err := h.Store.GetRoomByCode(ctx, code)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			http.Error(w, "room not found", http.StatusNotFound)
+			return
+		}
+
+		http.Error(w, "get room failed", http.StatusInternalServerError)
+		return
+	}
+
+	members, err := h.Store.ListRoomMembers(ctx, room.ID)
+	if err != nil {
+		http.Error(w, "get members failed", http.StatusInternalServerError)
+		return
+	}
+
+	packs, err := h.Store.GetRoomSelectedPackSlugs(ctx, room.ID)
+	if err != nil {
+		http.Error(w, "get packs failed", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"code":    room.Code,
+		"room":    room,
+		"members": members,
+		"packs":   packs,
+	})
 }

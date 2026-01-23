@@ -36,7 +36,6 @@ func NewAuthHandlers(store *storage.Storage, tokens *auth.TokenMaker, cookieSecu
 }
 
 func (h *AuthHandlers) Guest(w http.ResponseWriter, r *http.Request) {
-	// If they already have a refresh cookie, just do refresh flow.
 	if _, err := r.Cookie(auth.RefreshCookieName); err == nil {
 		h.Refresh(w, r)
 		return
@@ -125,7 +124,6 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 		_ = h.Store.RevokeRefreshSession(ctx, hash)
 	}
 
-	// Clear cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.RefreshCookieName,
 		Value:    "",
@@ -162,11 +160,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 func clientIP(r *http.Request) string {
-	// Basic (good enough for now). If behind proxy later, use X-Forwarded-For carefully.
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
-	// Strip IPv6 zone if present
 	return strings.Split(host, "%")[0]
 }

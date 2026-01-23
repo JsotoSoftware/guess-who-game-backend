@@ -37,7 +37,6 @@ func (s *Storage) CreateRoom(ctx context.Context, ownerUserID string, code strin
 		return nil, err
 	}
 
-	// Owner is also a member (host)
 	_, err = s.PG.Exec(ctx, `
 		INSERT INTO room_members (room_id, user_id, display_name, role, score)
 		VALUES ($1, $2, $3, 'host', 0)

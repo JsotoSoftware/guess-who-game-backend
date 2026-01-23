@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 )
 
-const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no confusing I/O/1/0
+const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 func NewRoomCode(n int) (string, error) {
 	b := make([]byte, n)

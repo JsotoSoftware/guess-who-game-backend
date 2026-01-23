@@ -3,6 +3,7 @@ package ws
 import (
 	"encoding/json"
 	"sync"
+	"time"
 )
 
 type Conn interface {
@@ -22,22 +23,12 @@ func NewHub() *Hub {
 	return &Hub{rooms: make(map[string]*RoomHub)}
 }
 
-func (h *Hub) GetRoom(code string) *RoomHub {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	r, ok := h.rooms[code]
-	if !ok {
-		r = NewRoomHub(code)
-		h.rooms[code] = r
-	}
-	return r
-}
-
 type RoomHub struct {
-	code    string
-	mu      sync.Mutex
-	conns   map[string]Conn
-	members map[string]MemberState
+	code         string
+	mu           sync.Mutex
+	conns        map[string]Conn
+	members      map[string]MemberState
+	lastActivity time.Time
 }
 
 type MemberState struct {
@@ -50,10 +41,22 @@ type MemberState struct {
 
 func NewRoomHub(code string) *RoomHub {
 	return &RoomHub{
-		code:    code,
-		conns:   map[string]Conn{},
-		members: map[string]MemberState{},
+		code:         code,
+		conns:        map[string]Conn{},
+		members:      map[string]MemberState{},
+		lastActivity: time.Now(),
 	}
+}
+
+func (h *Hub) GetRoom(code string) *RoomHub {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	r, ok := h.rooms[code]
+	if !ok {
+		r = NewRoomHub(code)
+		h.rooms[code] = r
+	}
+	return r
 }
 
 func (r *RoomHub) UpsertMemberState(m MemberState) {
@@ -81,12 +84,14 @@ func (r *RoomHub) Register(c Conn) {
 	}
 
 	r.conns[c.UserID()] = c
+	r.lastActivity = time.Now()
 }
 
 func (r *RoomHub) Unregister(userID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.conns, userID)
+	r.lastActivity = time.Now()
 }
 
 func (r *RoomHub) BroadcastPresence() {
@@ -112,6 +117,10 @@ func (r *RoomHub) BroadcastPresence() {
 	for _, c := range conns {
 		_ = c.Send(msg)
 	}
+
+	r.mu.Lock()
+	r.lastActivity = time.Now()
+	r.mu.Unlock()
 }
 
 func (r *RoomHub) SendTo(userID string, msg any) {
@@ -121,6 +130,60 @@ func (r *RoomHub) SendTo(userID string, msg any) {
 	if c != nil {
 		_ = c.Send(msg)
 	}
+}
+
+func (h *Hub) RoomSnapshot() map[string]*RoomHub {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	snap := make(map[string]*RoomHub, len(h.rooms))
+	for k, v := range h.rooms {
+		snap[k] = v
+	}
+	return snap
+}
+
+func (h *Hub) DeleteRoom(code string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.rooms, code)
+}
+
+func (h *Hub) TryDeleteEmptyRoom(code string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	r, ok := h.rooms[code]
+	if !ok {
+		return false
+	}
+
+	r.mu.Lock()
+	empty := len(r.conns) == 0
+	r.mu.Unlock()
+
+	if empty {
+		delete(h.rooms, code)
+		return true
+	}
+	return false
+}
+
+func (r *RoomHub) Touch() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lastActivity = time.Now()
+}
+
+func (r *RoomHub) ConnCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.conns)
+}
+
+func (r *RoomHub) LastActivity() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.lastActivity
 }
 
 func Marshal(v any) []byte {
