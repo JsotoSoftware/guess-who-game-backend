@@ -147,12 +147,6 @@
             color: #FFB74D;
             margin-bottom: 10px;
         }
-        .timer {
-            font-size: 18px;
-            font-weight: bold;
-            color: #FFB74D;
-            margin: 10px 0;
-        }
     </style>
 </head>
 <body>
@@ -251,50 +245,54 @@
             </div>
         </div>
 
-        <!-- Testing Scenarios -->
+        <!-- Tests -->
         <div class="section">
-            <h2>🧪 Test Scenarios</h2>
-            
+            <h2>🧪 Tests</h2>
+
+            <h3 style="color:#81C784;margin-top:0;">DB / StartRoundAssignCharacters</h3>
+
             <div class="test-section">
-                <h3>Test 1: Connection Timeout (30s idle)</h3>
-                <p>Connect and stop sending pings. Connection should be dropped after 30 seconds.</p>
-                <button onclick="testIdleTimeout()" id="testIdleBtn" disabled>Start Test</button>
-                <div id="idleTimer" class="timer"></div>
+                <h3>No repeats across rounds</h3>
+                <p>Run 2 rounds, collect character IDs from <code>round:assigned</code>; assert round 2 IDs are not in round 1.</p>
+                <div class="info-box">Join as <strong>host</strong> in a room with 2+ connected (e.g. host + player in another tab). Room must have packs with enough characters for 2 rounds.</div>
+                <button onclick="testNoRepeatsAcrossRounds()" id="testNoRepeatsBtn" disabled>Run</button>
             </div>
 
             <div class="test-section">
-                <h3>Test 2: Reconnection</h3>
-                <p>Connect, disconnect, then reconnect. Old connection should be replaced and presence should update.</p>
-                <button onclick="testReconnect()" id="testReconnectBtn" disabled>Start Test</button>
+                <h3>Not enough characters</h3>
+                <p>Send <code>host:start_round</code> when the room has fewer available characters than players; expect error &quot;not enough characters&quot;.</p>
+                <div class="info-box">Setup: room whose selected packs have &lt; N available characters, and N players connected. If the error is not &quot;not enough characters&quot;, the precondition was not met.</div>
+                <button onclick="testNotEnoughCharacters()" id="testNotEnoughBtn" disabled>Run</button>
             </div>
 
             <div class="test-section">
-                <h3>Test 3: Room Cleanup (40s idle)</h3>
-                <p>Create room, leave all clients, wait 40+ seconds. Room should be removed from hub memory.</p>
-                <div class="info-box">
-                    <strong>Note:</strong> This test requires waiting 40 seconds. The sweeper runs every 10 seconds.
-                    Room timeout is 40 seconds, connection timeout is 30 seconds.
-                </div>
-                <button onclick="testRoomCleanup()" id="testCleanupBtn" disabled>Start Test</button>
-                <div id="cleanupTimer" class="timer"></div>
+                <h3>Concurrent start_round (no duplicate characters)</h3>
+                <p>Send two <code>host:start_round</code> back-to-back. Expect one <code>host:round_started</code> and one error &quot;current round must be ended&quot;; no duplicate character assignments.</p>
+                <div class="info-box">Join as <strong>host</strong>. Test sends 2x start_round, then end_round to clean up.</div>
+                <button onclick="testConcurrentStartRound()" id="testConcurrentBtn" disabled>Run</button>
+            </div>
+
+            <h3 style="color:#81C784;margin-top:20px;">WS handler (table-driven)</h3>
+
+            <div class="test-section">
+                <h3>Join invalid payload</h3>
+                <p>Send <code>room:join</code> with invalid payloads; expect <code>error</code> with &quot;invalid join payload&quot;.</p>
+                <div class="info-box">Connected (join not required). Cases: <code>{}</code>, <code>{code:&quot;A&quot;}</code>, <code>{code:&quot;A&quot;,displayName:&quot;X&quot;}</code>, <code>{code:&quot;A&quot;,displayName:&quot;X&quot;,role:&quot;x&quot;}</code>.</div>
+                <button onclick="testJoinInvalidPayload()" id="testJoinInvalidBtn" disabled>Run</button>
             </div>
 
             <div class="test-section">
-                <h3>Test 4: Room State Consistency</h3>
-                <p>Test that GET /v1/rooms/state returns consistent snapshot matching WebSocket presence.</p>
-                <button onclick="testStateConsistency()" id="testStateBtn" disabled>Start Test</button>
+                <h3>Host permission enforcement</h3>
+                <p>As <strong>player</strong>, send <code>host:start_round</code>, <code>host:score_add</code>, <code>host:end_round</code>; expect &quot;host only&quot; for each.</p>
+                <div class="info-box">Create room in another tab as host, join there. In this tab join the same room as <strong>player</strong>, then run.</div>
+                <button onclick="testHostPermissionEnforcement()" id="testHostPermBtn" disabled>Run</button>
             </div>
 
             <div class="test-section">
-                <h3>Test 5: Round state, end_round &amp; requestId</h3>
-                <p>Verifies: (1) GET /v1/rooms/state returns <code>current_round_id</code> and <code>round_status</code>;
-                    (2) <code>host:end_round</code> returns <code>host:round_ended</code> with <code>requestId</code> when provided;
-                    (3) <code>round_status</code> is "none" when no round, "active" when a round is running.</p>
-                <div class="info-box">
-                    <strong>Run as host</strong> in a joined room. <code>host:end_round</code> works even when no round is active.
-                    To test <code>round_status: "active"</code>: open another tab as <strong>Player</strong>, join the same room, then here run <strong>host:start_round</strong> first; after that, run this test to see <code>round_status: "active"</code> and then <code>host:end_round</code>.
-                </div>
-                <button onclick="testRoundStateAndRequestId()" id="testRoundStateBtn" disabled>Start Test</button>
+                <h3>Score update path updates presence</h3>
+                <p>As host, <code>host:score_add</code> for a member; expect <code>host:score_added</code> and <code>room:presence</code> with updated score.</p>
+                <div class="info-box">Join as <strong>host</strong>. Test scores yourself. For a clear pass, start from a fresh join (score 0).</div>
+                <button onclick="testScoreUpdatePresence()" id="testScorePresenceBtn" disabled>Run</button>
             </div>
         </div>
 
@@ -311,11 +309,8 @@
         let ws = null;
         let pingInterval = null;
         let uiSyncInterval = null;
-        let idleTestStart = null;
-        let idleTestInterval = null;
-        let cleanupTestStart = null;
-        let cleanupTestInterval = null;
         let currentRoomCode = null;
+        let currentUserId = null;
 
         const API_URL = () => document.getElementById('apiUrl').value;
 
@@ -408,13 +403,9 @@
                 console.log('WebSocket opened, readyState:', ws.readyState);
                 updateStatus('wsStatus', 'connected', 'Connected');
                 syncUiState();
-                log(`UI: sendBtn.disabled=${document.getElementById('sendBtn')?.disabled}`, 'info');
-                document.getElementById('testIdleBtn').disabled = false;
-                document.getElementById('testReconnectBtn').disabled = false;
-                document.getElementById('testCleanupBtn').disabled = false;
-                document.getElementById('testStateBtn').disabled = false;
-                document.getElementById('testRoundStateBtn').disabled = false;
-                
+                ['testNoRepeatsBtn','testNotEnoughBtn','testConcurrentBtn','testJoinInvalidBtn','testHostPermBtn','testScorePresenceBtn'].forEach(id => {
+                    const el = document.getElementById(id); if (el) el.disabled = false;
+                });
                 // Start ping interval
                 startPing();
             };
@@ -434,9 +425,16 @@
                     
                     if (msg.type === 'room:joined') {
                         currentRoomCode = msg.payload?.code;
+                        currentUserId = msg.payload?.userId || null;
                         if (currentRoomCode) {
                             document.getElementById('roomCode').value = currentRoomCode;
                         }
+                    }
+                    if (window.__testResolveNextMsg) {
+                        try { window.__testResolveNextMsg(msg); } finally { window.__testResolveNextMsg = null; }
+                    }
+                    if (window.__testCollecting) {
+                        (window.__testCollected = window.__testCollected || []).push(msg);
                     }
                     
                     // Show success/error messages prominently
@@ -649,129 +647,168 @@
             }
         }
 
-        // Test Scenarios
-        function testIdleTimeout() {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                log('Please connect WebSocket first', 'error');
-                return;
-            }
-            
-            log('🧪 Starting idle timeout test. Stopping pings...', 'info');
-            stopPing();
-            idleTestStart = Date.now();
-            
-            idleTestInterval = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - idleTestStart) / 1000);
-                const remaining = 30 - elapsed;
-                document.getElementById('idleTimer').textContent = 
-                    `Time idle: ${elapsed}s / 30s (${remaining}s until expected timeout)`;
-                
-                if (ws.readyState !== WebSocket.OPEN) {
-                    clearInterval(idleTestInterval);
-                    document.getElementById('idleTimer').textContent = 
-                        `✓ Connection closed after ${elapsed} seconds`;
-                    log(`✓ Test complete: Connection closed after ${elapsed} seconds`, 'info');
-                    startPing(); // Restart pings
+        function waitForNextMessage(predicate) {
+            predicate = predicate || (() => true);
+            return new Promise(resolve => {
+                window.__testResolveNextMsg = (m) => { if (predicate(m)) resolve(m); };
+            });
+        }
+
+        function extractCharacterIdsFromCollected(collected) {
+            const ids = [];
+            for (const m of collected) {
+                if (m.type === 'round:assigned' && m.payload && Array.isArray(m.payload.assignments)) {
+                    for (const a of m.payload.assignments)
+                        if (a.character && a.character.id) ids.push(a.character.id);
                 }
-            }, 1000);
+            }
+            return ids;
         }
 
-        async function testReconnect() {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                log('Please connect WebSocket first', 'error');
-                return;
-            }
-            
-            log('🧪 Starting reconnection test...', 'info');
+        // --- DB / StartRoundAssignCharacters ---
+        async function testNoRepeatsAcrossRounds() {
             const code = document.getElementById('roomCode').value || currentRoomCode;
-            const displayName = document.getElementById('displayName').value;
-            const role = document.getElementById('role').value;
-            
-            if (!code) {
-                log('Please join a room first', 'error');
-                return;
-            }
-            
-            // Step 1: Disconnect
-            log('Step 1: Disconnecting...', 'info');
-            disconnectWS();
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Step 2: Reconnect
-            log('Step 2: Reconnecting...', 'info');
-            connectWS();
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            // Step 3: Rejoin
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                log('Step 3: Rejoining room...', 'info');
-                sendWSMessage({
-                    type: 'room:join',
-                    payload: { code, displayName, role }
-                });
-                log('✓ Reconnection test complete. Check presence updates.', 'info');
+            if (!code) { log('Join a room first', 'error'); return; }
+            if (!ws || ws.readyState !== WebSocket.OPEN) { log('WebSocket not connected', 'error'); return; }
+
+            log('🧪 No repeats across rounds', 'info');
+            window.__testCollecting = true; window.__testCollected = [];
+            sendWSMessage({ type: 'host:start_round', payload: { code, lang: 'es' } });
+            await new Promise(r => setTimeout(r, 1800));
+            const round1 = extractCharacterIdsFromCollected(window.__testCollected);
+            window.__testCollected = [];
+
+            sendWSMessage({ type: 'host:end_round', payload: {} });
+            await new Promise(r => setTimeout(r, 400));
+            sendWSMessage({ type: 'host:start_round', payload: { code, lang: 'es' } });
+            await new Promise(r => setTimeout(r, 1800));
+            const round2 = extractCharacterIdsFromCollected(window.__testCollected);
+            window.__testCollecting = false;
+
+            sendWSMessage({ type: 'host:end_round', payload: {} });
+            const overlap = round2.some(id => round1.includes(id));
+            if (overlap) {
+                log(`✗ FAIL: round 2 char IDs [${round2.join(',')}] overlap round 1 [${round1.join(',')}]`, 'error');
+            } else {
+                log(`✓ PASS: no repeats. Round1: ${round1.length} ids, Round2: ${round2.length} ids.`, 'info');
             }
         }
 
-        function testRoomCleanup() {
-            log('🧪 Starting room cleanup test...', 'info');
-            log('⚠️ This test requires waiting 40 seconds. Room will be cleaned up after 40s of inactivity.', 'info');
-            log('⚠️ Connection will timeout after 30 seconds without pings.', 'info');
-            
-            cleanupTestStart = Date.now();
-            cleanupTestInterval = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - cleanupTestStart) / 1000);
-                const remaining = 40 - elapsed;
-                document.getElementById('cleanupTimer').textContent = 
-                    `Elapsed: ${elapsed}s / 40s (${remaining > 0 ? remaining + 's remaining' : 'timeout reached'})`;
-                
-                if (elapsed >= 40) {
-                    clearInterval(cleanupTestInterval);
-                    document.getElementById('cleanupTimer').textContent = 
-                        `✓ 40 seconds elapsed. Room should be cleaned up.`;
-                    log('✓ Test complete: 40 seconds elapsed. Check if room was cleaned up.', 'info');
-                }
-            }, 1000);
-        }
-
-        async function testStateConsistency() {
+        async function testNotEnoughCharacters() {
             const code = document.getElementById('roomCode').value || currentRoomCode;
-            if (!code) {
-                log('Please join a room first', 'error');
-                return;
+            if (!code) { log('Join a room first', 'error'); return; }
+            if (!ws || ws.readyState !== WebSocket.OPEN) { log('WebSocket not connected', 'error'); return; }
+
+            log('🧪 Not enough characters', 'info');
+            window.__testResolveNextMsg = null;
+            sendWSMessage({ type: 'host:start_round', payload: { code, lang: 'es' } });
+            const m = await Promise.race([
+                new Promise(r => { window.__testResolveNextMsg = (msg) => { window.__testResolveNextMsg = null; r(msg); }; }),
+                new Promise(r => setTimeout(() => r({ type: 'timeout' }), 3000))
+            ]);
+            const err = (m.payload && m.payload.message) || '';
+            if (err.toLowerCase().includes('not enough')) {
+                log('✓ PASS: got "not enough characters" error.', 'info');
+            } else if (m.type === 'host:round_started' || m.type === 'round:assigned') {
+                sendWSMessage({ type: 'host:end_round', payload: {} });
+                log('Precondition not met: room had enough characters. Use a room with very few available chars and 2+ players.', 'info');
+            } else {
+                log(`? Got: ${m.type} ${err}`, 'info');
             }
-            
-            log('🧪 Testing room state consistency...', 'info');
-            log('Step 1: Getting room state via HTTP...', 'info');
-            await getRoomState();
-            
-            log('Step 2: Check WebSocket presence messages above for comparison', 'info');
-            log('✓ Compare HTTP state with WebSocket presence. They should match.', 'info');
         }
 
-        async function testRoundStateAndRequestId() {
+        async function testConcurrentStartRound() {
             const code = document.getElementById('roomCode').value || currentRoomCode;
-            if (!code) {
-                log('Please join a room first', 'error');
-                return;
+            if (!code) { log('Join a room first', 'error'); return; }
+            if (!ws || ws.readyState !== WebSocket.OPEN) { log('WebSocket not connected', 'error'); return; }
+
+            log('🧪 Concurrent start_round', 'info');
+            window.__testCollecting = true; window.__testCollected = [];
+            sendWSMessage({ type: 'host:start_round', payload: { code, lang: 'es' } });
+            sendWSMessage({ type: 'host:start_round', payload: { code, lang: 'es' } });
+            await new Promise(r => setTimeout(r, 2000));
+            window.__testCollecting = false;
+            const arr = window.__testCollected || [];
+            const hasRoundStarted = arr.some(m => m.type === 'host:round_started');
+            const errMsg = arr.find(m => m.type === 'error')?.payload?.message || '';
+            const hasExpectedError = /current round must be ended|ended before starting/i.test(errMsg);
+            sendWSMessage({ type: 'host:end_round', payload: {} });
+            if (hasRoundStarted && hasExpectedError) {
+                log('✓ PASS: one host:round_started, one "current round must be ended" error.', 'info');
+            } else {
+                log(`✗ FAIL: hasRoundStarted=${hasRoundStarted} hasExpectedError=${hasExpectedError} (${errMsg})`, 'error');
             }
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                log('WebSocket not connected', 'error');
-                return;
+        }
+
+        // --- WS handler (table-driven) ---
+        async function testJoinInvalidPayload() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) { log('WebSocket not connected', 'error'); return; }
+
+            const cases = [
+                { payload: {}, expect: 'invalid' },
+                { payload: { code: 'A' }, expect: 'invalid' },
+                { payload: { code: 'A', displayName: 'X' }, expect: 'invalid' },
+                { payload: { code: 'A', displayName: 'X', role: 'x' }, expect: 'invalid' }
+            ];
+            log('🧪 Join invalid payload (table-driven)', 'info');
+            for (const c of cases) {
+                window.__testResolveNextMsg = null;
+                sendWSMessage({ type: 'room:join', payload: c.payload });
+                const m = await Promise.race([
+                    new Promise(r => { window.__testResolveNextMsg = (msg) => { window.__testResolveNextMsg = null; r(msg); }; }),
+                    new Promise(r => setTimeout(() => r({ type: 'timeout' }), 2000))
+                ]);
+                const msg = (m.payload && m.payload.message) || '';
+                const ok = m.type === 'error' && msg.toLowerCase().includes(c.expect);
+                log(ok ? `  ✓ ${JSON.stringify(c.payload)} -> error (${msg.slice(0,40)}...)` : `  ✗ ${JSON.stringify(c.payload)} -> ${m.type} ${msg}`, ok ? 'info' : 'error');
             }
-            
-            log('🧪 Test 5: Round state, end_round & requestId', 'info');
-            log('Step 1: Getting room state (current_round_id, round_status)...', 'info');
-            await getRoomState();
-            
-            log('Step 2: Sending host:end_round with requestId=test-req-end-1...', 'info');
-            sendWSMessage({ type: 'host:end_round', requestId: 'test-req-end-1', payload: {} });
-            
-            await new Promise(r => setTimeout(r, 600));
-            log('Step 3: Getting room state again...', 'info');
-            await getRoomState();
-            
-            log('✓ Test 5 done. Check that host:round_ended in the log includes requestId: test-req-end-1.', 'info');
+            log('Done.', 'info');
+        }
+
+        async function testHostPermissionEnforcement() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) { log('WebSocket not connected', 'error'); return; }
+            const code = document.getElementById('roomCode').value || currentRoomCode;
+            if (!code) { log('Join as player first', 'error'); return; }
+
+            const actions = [
+                { type: 'host:start_round', payload: { code, lang: 'es' } },
+                { type: 'host:score_add', payload: { userId: '00000000-0000-0000-0000-000000000000', delta: 1 } },
+                { type: 'host:end_round', payload: {} }
+            ];
+            log('🧪 Host permission enforcement', 'info');
+            for (const a of actions) {
+                window.__testResolveNextMsg = null;
+                sendWSMessage({ type: a.type, payload: a.payload });
+                const m = await Promise.race([
+                    new Promise(r => { window.__testResolveNextMsg = (msg) => { window.__testResolveNextMsg = null; r(msg); }; }),
+                    new Promise(r => setTimeout(() => r({ type: 'timeout' }), 2000))
+                ]);
+                const ok = m.type === 'error' && (m.payload?.message || '').toLowerCase().includes('host only');
+                log(ok ? `  ✓ ${a.type} -> "host only"` : `  ✗ ${a.type} -> ${m.type}`, ok ? 'info' : 'error');
+            }
+            log('Done.', 'info');
+        }
+
+        async function testScoreUpdatePresence() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) { log('WebSocket not connected', 'error'); return; }
+            const code = document.getElementById('roomCode').value || currentRoomCode;
+            if (!code || !currentUserId) { log('Join as host first (need userId from room:joined)', 'error'); return; }
+
+            log('🧪 Score update path updates presence', 'info');
+            window.__testCollecting = true; window.__testCollected = [];
+            sendWSMessage({ type: 'host:score_add', payload: { code, userId: currentUserId, delta: 5 } });
+            await new Promise(r => setTimeout(r, 1500));
+            window.__testCollecting = false;
+            const arr = window.__testCollected || [];
+            const hasScoreAdded = arr.some(m => m.type === 'host:score_added');
+            const presence = arr.find(m => m.type === 'room:presence');
+            const me = presence && presence.payload && (presence.payload.members || []).find(x => x.userId === currentUserId);
+            const scoreOk = me && me.score === 5;
+            if (hasScoreAdded && scoreOk) {
+                log('✓ PASS: host:score_added and room:presence with score=5.', 'info');
+            } else {
+                log(`✗ FAIL: hasScoreAdded=${hasScoreAdded} presenceScore=${me ? me.score : 'n/a'}`, 'error');
+            }
         }
 
         // Auto-authenticate on load
