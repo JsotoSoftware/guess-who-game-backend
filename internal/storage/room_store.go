@@ -8,12 +8,13 @@ import (
 )
 
 type Room struct {
-	ID             string
-	Code           string
-	OwnerUserID    string
-	Status         string
-	CreatedAt      time.Time
-	LastActivityAt time.Time
+	ID              string
+	Code            string
+	OwnerUserID     string
+	Status          string
+	CreatedAt       time.Time
+	LastActivityAt  time.Time
+	CurrentRoundID  *string
 }
 
 type RoomMember struct {
@@ -52,10 +53,10 @@ func (s *Storage) CreateRoom(ctx context.Context, ownerUserID string, code strin
 func (s *Storage) GetRoomByCode(ctx context.Context, code string) (*Room, error) {
 	var r Room
 	err := s.PG.QueryRow(ctx, `
-		SELECT id, code, owner_user_id, status, created_at, last_activity_at
+		SELECT id, code, owner_user_id, status, created_at, last_activity_at, current_round_id
 		FROM rooms
 		WHERE code = $1
-	`, code).Scan(&r.ID, &r.Code, &r.OwnerUserID, &r.Status, &r.CreatedAt, &r.LastActivityAt)
+	`, code).Scan(&r.ID, &r.Code, &r.OwnerUserID, &r.Status, &r.CreatedAt, &r.LastActivityAt, &r.CurrentRoundID)
 	if err != nil {
 		return nil, err
 	}

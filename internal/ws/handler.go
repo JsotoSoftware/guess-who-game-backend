@@ -50,6 +50,12 @@ type ScoreAddPayload struct {
 	Delta  int    `json:"delta"`
 }
 
+func addRequestID(m map[string]any, id string) {
+	if id != "" {
+		m["requestId"] = id
+	}
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("access_token")
 	if raw == "" {
@@ -216,23 +222,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		case "host:start_round":
 			if wsconn == nil || room == nil {
-				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
-					"type": "error", "payload": map[string]any{"message": "must join first"},
-				}))
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "must join first"}}
+				addRequestID(m, env.RequestID)
+				_ = c.Write(ctx, websocket.MessageText, Marshal(m))
 				continue
 			}
 			if role != "host" {
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "host only"}})
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "host only"}}
+				addRequestID(m, env.RequestID)
+				_ = wsconn.Send(m)
 				continue
 			}
 
 			var p StartRoundPayload
 			if err := json.Unmarshal(env.Payload, &p); err != nil {
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "invalid payload: " + err.Error()}})
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "invalid payload: " + err.Error()}}
+				addRequestID(m, env.RequestID)
+				_ = wsconn.Send(m)
 				continue
 			}
 			if p.Code == "" {
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "code is required"}})
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "code is required"}}
+				addRequestID(m, env.RequestID)
+				_ = wsconn.Send(m)
 				continue
 			}
 			lang := p.Lang
@@ -248,7 +260,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			room.mu.Unlock()
 
 			if len(playerIDs) == 0 {
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "no players connected"}})
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "no players connected"}}
+				addRequestID(m, env.RequestID)
+				_ = wsconn.Send(m)
 				continue
 			}
 
@@ -256,7 +270,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			roundID, assigns, err := h.Store.StartRoundAssignCharacters(dbCtx, roomID, lang, playerIDs)
 			cancel()
 			if err != nil {
-				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "failed to start round: " + err.Error()}})
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "failed to start round: " + err.Error()}}
+				addRequestID(m, env.RequestID)
+				_ = wsconn.Send(m)
 				continue
 			}
 
@@ -285,51 +301,53 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 
-			_ = wsconn.Send(map[string]any{
+			m := map[string]any{
 				"type": "host:round_started",
 				"payload": map[string]any{
 					"roundId":     roundID,
 					"playerCount": len(assigns),
 					"lang":        lang,
 				},
-			})
+			}
+			addRequestID(m, env.RequestID)
+			_ = wsconn.Send(m)
 
 			room.BroadcastPresence()
 
 		case "host:score_add":
 			if wsconn == nil || room == nil {
-				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
-					"type": "error", "payload": map[string]any{"message": "must join first"},
-				}))
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "must join first"}}
+				addRequestID(m, env.RequestID)
+				_ = c.Write(ctx, websocket.MessageText, Marshal(m))
 				continue
 			}
 			if role != "host" {
-				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
-					"type": "error", "payload": map[string]any{"message": "host only"},
-				}))
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "host only"}}
+				addRequestID(m, env.RequestID)
+				_ = c.Write(ctx, websocket.MessageText, Marshal(m))
 				continue
 			}
 
 			var p ScoreAddPayload
 			if err := json.Unmarshal(env.Payload, &p); err != nil {
-				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
-					"type": "error", "payload": map[string]any{"message": "invalid payload: " + err.Error()},
-				}))
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "invalid payload: " + err.Error()}}
+				addRequestID(m, env.RequestID)
+				_ = c.Write(ctx, websocket.MessageText, Marshal(m))
 				continue
 			}
 			if p.UserID == "" || p.Delta == 0 {
-				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
-					"type": "error", "payload": map[string]any{"message": "userId and delta required, delta must be non-zero"},
-				}))
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "userId and delta required, delta must be non-zero"}}
+				addRequestID(m, env.RequestID)
+				_ = c.Write(ctx, websocket.MessageText, Marshal(m))
 				continue
 			}
 
 			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
 			if err := h.Store.AddMemberScore(dbCtx, roomID, p.UserID, p.Delta); err != nil {
 				cancel()
-				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
-					"type": "error", "payload": map[string]any{"message": "score update failed: " + err.Error()},
-				}))
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "score update failed: " + err.Error()}}
+				addRequestID(m, env.RequestID)
+				_ = c.Write(ctx, websocket.MessageText, Marshal(m))
 				continue
 			}
 			members, _ := h.Store.ListRoomMembersWithConnectionHint(dbCtx, roomID)
@@ -356,14 +374,45 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			room.mu.Unlock()
 
-			_ = wsconn.Send(map[string]any{
+			m := map[string]any{
 				"type": "host:score_added",
 				"payload": map[string]any{
 					"userId": p.UserID,
 					"delta":  p.Delta,
 				},
-			})
+			}
+			addRequestID(m, env.RequestID)
+			_ = wsconn.Send(m)
 
+			room.BroadcastPresence()
+
+		case "host:end_round":
+			if wsconn == nil || room == nil {
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "must join first"}}
+				addRequestID(m, env.RequestID)
+				_ = c.Write(ctx, websocket.MessageText, Marshal(m))
+				continue
+			}
+			if role != "host" {
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "host only"}}
+				addRequestID(m, env.RequestID)
+				_ = wsconn.Send(m)
+				continue
+			}
+
+			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
+			err = h.Store.EndRound(dbCtx, roomID)
+			cancel()
+			if err != nil {
+				m := map[string]any{"type": "error", "payload": map[string]any{"message": "failed to end round: " + err.Error()}}
+				addRequestID(m, env.RequestID)
+				_ = wsconn.Send(m)
+				continue
+			}
+
+			m := map[string]any{"type": "host:round_ended"}
+			addRequestID(m, env.RequestID)
+			_ = wsconn.Send(m)
 			room.BroadcastPresence()
 
 		case "client:ping":

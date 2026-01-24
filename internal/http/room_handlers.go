@@ -199,10 +199,16 @@ func (h *RoomsHandlers) GetRoomStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	roundStatus := "none"
+	if room.CurrentRoundID != nil && *room.CurrentRoundID != "" {
+		roundStatus = "active"
+	}
 	writeJSON(w, map[string]any{
-		"code":    room.Code,
-		"room":    room,
-		"members": members,
-		"packs":   packs,
+		"code":             room.Code,
+		"room":             room,
+		"members":          members,
+		"packs":            packs,
+		"current_round_id": room.CurrentRoundID,
+		"round_status":     roundStatus,
 	})
 }

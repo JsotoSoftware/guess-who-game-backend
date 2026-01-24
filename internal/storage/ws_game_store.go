@@ -12,6 +12,7 @@ var (
 	ErrNotHost             = errors.New("not host")
 	ErrNoPackSelection     = errors.New("no packs selected for room")
 	ErrNotEnoughCharacters = errors.New("not enough characters available")
+	ErrRoundAlreadyActive  = errors.New("current round must be ended before starting a new one")
 )
 
 func (s *Storage) AddMemberScore(ctx context.Context, roomID, userID string, delta int) error {
@@ -82,6 +83,14 @@ func (s *Storage) StartRoundAssignCharacters(
 			_ = tx.Rollback(ctx)
 		}
 	}()
+
+	var cur *string
+	if err = tx.QueryRow(ctx, `SELECT current_round_id FROM rooms WHERE id=$1 FOR UPDATE`, roomID).Scan(&cur); err != nil {
+		return "", nil, err
+	}
+	if cur != nil && *cur != "" {
+		return "", nil, ErrRoundAlreadyActive
+	}
 
 	if err = tx.QueryRow(ctx, `
 		INSERT INTO room_rounds (room_id, started_at, lang)
@@ -166,13 +175,41 @@ func (s *Storage) StartRoundAssignCharacters(
 		})
 	}
 
-	_, _ = tx.Exec(ctx, `UPDATE rooms SET last_activity_at=now() WHERE id=$1`, roomID)
+	_, _ = tx.Exec(ctx, `UPDATE rooms SET current_round_id=$2, last_activity_at=now() WHERE id=$1`, roomID, roundID)
 
 	if err = tx.Commit(ctx); err != nil {
 		return "", nil, err
 	}
 
 	return roundID, assignments, nil
+}
+
+func (s *Storage) EndRound(ctx context.Context, roomID string) error {
+	tx, err := s.PG.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	var cur *string
+	if err = tx.QueryRow(ctx, `SELECT current_round_id FROM rooms WHERE id=$1 FOR UPDATE`, roomID).Scan(&cur); err != nil {
+		return err
+	}
+	if cur == nil || *cur == "" {
+		return tx.Commit(ctx)
+	}
+
+	if _, err = tx.Exec(ctx, `UPDATE room_rounds SET ended_at=now() WHERE id=$1`, *cur); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE rooms SET current_round_id=NULL WHERE id=$1`, roomID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Storage) TouchUser(ctx context.Context, userID string) {
