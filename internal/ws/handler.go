@@ -97,6 +97,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var roomID string
 	var role string
 	var displayName string
+	var dbCtx context.Context
+	var cancel context.CancelFunc
 
 	for {
 		b, err := read()
@@ -139,9 +141,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Load room from DB
-			dbCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			defer cancel()
+			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
 			roomObj, err := h.Store.GetRoomByCode(dbCtx, p.Code)
+			cancel()
 			if err != nil {
 				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
 					"type": "error", "payload": map[string]any{"message": "room not found"},
@@ -158,9 +160,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
-			defer cancel()
 			err = h.Store.UpsertRoomMember(dbCtx, roomObj.ID, userID, p.DisplayName, p.Role)
 			_ = h.Store.TouchRoomActivity(dbCtx, roomObj.ID)
+			cancel()
 			if err != nil {
 				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
 					"type": "error", "payload": map[string]any{"message": "failed to join room"},
@@ -179,8 +181,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			room.Register(wsconn)
 
 			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
-			defer cancel()
 			members, _ := h.Store.ListRoomMembers(dbCtx, roomID)
+			cancel()
 
 			for _, m := range members {
 				room.UpsertMemberState(MemberState{
@@ -250,10 +252,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			dbCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-			defer cancel()
-
+			dbCtx, cancel = context.WithTimeout(ctx, 8*time.Second)
 			roundID, assigns, err := h.Store.StartRoundAssignCharacters(dbCtx, roomID, lang, playerIDs)
+			cancel()
 			if err != nil {
 				_ = wsconn.Send(map[string]any{"type": "error", "payload": map[string]any{"message": "failed to start round: " + err.Error()}})
 				continue
@@ -323,17 +324,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			dbCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-			defer cancel()
-
+			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
 			if err := h.Store.AddMemberScore(dbCtx, roomID, p.UserID, p.Delta); err != nil {
+				cancel()
 				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
 					"type": "error", "payload": map[string]any{"message": "score update failed: " + err.Error()},
 				}))
 				continue
 			}
-
 			members, _ := h.Store.ListRoomMembersWithConnectionHint(dbCtx, roomID)
+			cancel()
 			for _, m := range members {
 				room.UpsertMemberState(MemberState{
 					UserID:      m.UserID,

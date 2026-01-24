@@ -17,12 +17,10 @@ func (s *Storage) SetRoomPackSelectionBySlugs(ctx context.Context, roomID string
 		}
 	}()
 
-	// Clear old selection
 	if _, err = tx.Exec(ctx, `DELETE FROM room_pack_selection WHERE room_id=$1`, roomID); err != nil {
 		return err
 	}
 
-	// Insert new selection
 	for _, slug := range packSlugs {
 		var packID string
 		if err = tx.QueryRow(ctx, `SELECT id FROM packs WHERE slug=$1 AND is_public=true`, slug).Scan(&packID); err != nil {

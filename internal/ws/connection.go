@@ -63,7 +63,6 @@ func (w *WSConn) Send(v any) error {
 		return err
 	}
 
-	// Extract message type for logging
 	var msgType string
 	if msg, ok := v.(map[string]any); ok {
 		if t, ok := msg["type"].(string); ok {
@@ -93,7 +92,6 @@ func (w *WSConn) writeLoop() {
 				return
 			}
 
-			// Parse message type for logging
 			var msgType string
 			var msg map[string]any
 			if err := json.Unmarshal(b, &msg); err == nil {

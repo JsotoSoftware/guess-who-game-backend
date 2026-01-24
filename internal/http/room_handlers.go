@@ -45,7 +45,6 @@ func (h *RoomsHandlers) Create(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
-	// Retry logic for code collisions (very rare with 6-char codes: 32^6 = ~1B possibilities)
 	const maxRetries = 5
 	for i := 0; i < maxRetries; i++ {
 		code, err := domain.NewRoomCode(6)
@@ -60,17 +59,12 @@ func (h *RoomsHandlers) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Only retry on unique constraint violation (code collision)
-		// PostgreSQL error code 23505 = unique_violation
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
-			// Non-collision error (e.g., connection issue, constraint violation on user_id)
 			http.Error(w, "failed to create room", http.StatusInternalServerError)
 			return
 		}
 
-		// Collision detected - retry with new code
-		// Add small jitter to avoid thundering herd if multiple requests collide
 		if i < maxRetries-1 {
 			time.Sleep(time.Duration(i+1) * 10 * time.Millisecond)
 		}
@@ -88,7 +82,6 @@ func (h *RoomsHandlers) Join(w http.ResponseWriter, r *http.Request) {
 
 	var req joinRoomReq
 
-	// Read body to check if it's empty or malformed
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to read request body")

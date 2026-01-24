@@ -48,7 +48,6 @@ func (s *Storage) StartRoundAssignCharacters(
 		return "", nil, errors.New("no players to assign")
 	}
 
-	// gather selected pack_ids from room_pack_selection
 	packRows, err := s.PG.Query(ctx, `
 		SELECT pack_id
 		FROM room_pack_selection
@@ -84,7 +83,6 @@ func (s *Storage) StartRoundAssignCharacters(
 		}
 	}()
 
-	// create round
 	if err = tx.QueryRow(ctx, `
 		INSERT INTO room_rounds (room_id, started_at, lang)
 		VALUES ($1, now(), $2)
@@ -95,8 +93,6 @@ func (s *Storage) StartRoundAssignCharacters(
 
 	need := len(playerUserIDs)
 
-	// Select N characters not used in this room, from selected packs.
-	// Lock character rows to avoid double-selection in concurrent rounds.
 	type pick struct {
 		id   string
 		name string
@@ -140,7 +136,6 @@ func (s *Storage) StartRoundAssignCharacters(
 		return "", nil, ErrNotEnoughCharacters
 	}
 
-	// Reserve: mark used (prevents repeats in room across future rounds)
 	for _, p := range picked {
 		if _, err = tx.Exec(ctx, `
 			INSERT INTO room_used_characters (room_id, character_id, first_used_at)
@@ -150,7 +145,6 @@ func (s *Storage) StartRoundAssignCharacters(
 		}
 	}
 
-	// Assign picked characters to playerUserIDs (1:1)
 	assignments = make([]RoundAssignment, 0, need)
 	for i := 0; i < need; i++ {
 		userID := playerUserIDs[i]
@@ -172,10 +166,8 @@ func (s *Storage) StartRoundAssignCharacters(
 		})
 	}
 
-	// Touch room activity
 	_, _ = tx.Exec(ctx, `UPDATE rooms SET last_activity_at=now() WHERE id=$1`, roomID)
 
-	// commit
 	if err = tx.Commit(ctx); err != nil {
 		return "", nil, err
 	}
@@ -195,7 +187,6 @@ func (s *Storage) ListRoomMembersWithConnectionHint(
 	ctx context.Context,
 	roomID string,
 ) ([]RoomMember, error) {
-	// reuse existing list, but keep as-is
 	return s.ListRoomMembers(ctx, roomID)
 }
 

@@ -33,13 +33,10 @@ func (s *Storage) CreateGuestUserAndSession(
 		}
 	}()
 
-	// Create user
 	if err = tx.QueryRow(ctx, `INSERT INTO users DEFAULT VALUES RETURNING id`).Scan(&userID); err != nil {
 		return "", "", err
 	}
 
-	// Create identity (optional but useful for later linking/analytics)
-	// provider_id can be a random string; not required for auth since refresh session is the real handle.
 	if _, err = tx.Exec(ctx, `
 		INSERT INTO user_identities (user_id, provider, provider_id)
 		VALUES ($1, 'guest', $2)
@@ -47,7 +44,6 @@ func (s *Storage) CreateGuestUserAndSession(
 		return "", "", err
 	}
 
-	// Create refresh session
 	if err = tx.QueryRow(ctx, `
 		INSERT INTO refresh_sessions (user_id, token_hash, expires_at, user_agent, ip)
 		VALUES ($1, $2, $3, $4, $5)
@@ -99,7 +95,6 @@ func (s *Storage) RotateRefreshSession(
 		}
 	}()
 
-	// Lock old session row so rotations are safe
 	var expiresAt time.Time
 	var revokedAt *time.Time
 	if err = tx.QueryRow(ctx, `
@@ -116,7 +111,6 @@ func (s *Storage) RotateRefreshSession(
 		return "", "", pgx.ErrNoRows
 	}
 
-	// Revoke old
 	if _, err = tx.Exec(ctx, `
 		UPDATE refresh_sessions
 		SET revoked_at = now(), last_used_at = now()
@@ -125,7 +119,6 @@ func (s *Storage) RotateRefreshSession(
 		return "", "", err
 	}
 
-	// Create new
 	if err = tx.QueryRow(ctx, `
 		INSERT INTO refresh_sessions (user_id, token_hash, expires_at, user_agent, ip, last_used_at)
 		VALUES ($1, $2, $3, $4, $5, now())
