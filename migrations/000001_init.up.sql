@@ -128,6 +128,11 @@ CREATE TABLE IF NOT EXISTS room_rounds (
 
 CREATE INDEX IF NOT EXISTS idx_room_rounds_room_id ON room_rounds(room_id);
 
+-- rooms.current_round_id: FK must be added after room_rounds exists. Set on start_round, cleared on end_round.
+ALTER TABLE rooms
+  ADD COLUMN current_round_id UUID NULL
+  REFERENCES room_rounds(id) ON DELETE SET NULL;
+
 -- Assignments per round (who got what)
 CREATE TABLE IF NOT EXISTS round_assignments (
   round_id UUID NOT NULL REFERENCES room_rounds(id) ON DELETE CASCADE,

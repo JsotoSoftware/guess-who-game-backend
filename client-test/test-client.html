@@ -229,11 +229,16 @@
                         <option value="client:ping">client:ping</option>
                         <option value="host:start_round">host:start_round</option>
                         <option value="host:score_add">host:score_add</option>
+                        <option value="host:end_round">host:end_round</option>
                     </select>
                 </div>
                 <div class="col">
                     <label>Payload (JSON):</label>
                     <input type="text" id="msgPayload" placeholder='{"code":"ABC123","lang":"es"}' value='{"code":"","lang":"es"}'>
+                </div>
+                <div class="col">
+                    <label>Request ID (optional, echoed in acks/errors):</label>
+                    <input type="text" id="requestId" placeholder="e.g. req-1">
                 </div>
                 <div class="col">
                     <button onclick="sendMessage()" id="sendBtn" disabled>Send Message</button>
@@ -278,6 +283,18 @@
                 <h3>Test 4: Room State Consistency</h3>
                 <p>Test that GET /v1/rooms/state returns consistent snapshot matching WebSocket presence.</p>
                 <button onclick="testStateConsistency()" id="testStateBtn" disabled>Start Test</button>
+            </div>
+
+            <div class="test-section">
+                <h3>Test 5: Round state, end_round &amp; requestId</h3>
+                <p>Verifies: (1) GET /v1/rooms/state returns <code>current_round_id</code> and <code>round_status</code>;
+                    (2) <code>host:end_round</code> returns <code>host:round_ended</code> with <code>requestId</code> when provided;
+                    (3) <code>round_status</code> is "none" when no round, "active" when a round is running.</p>
+                <div class="info-box">
+                    <strong>Run as host</strong> in a joined room. <code>host:end_round</code> works even when no round is active.
+                    To test <code>round_status: "active"</code>: open another tab as <strong>Player</strong>, join the same room, then here run <strong>host:start_round</strong> first; after that, run this test to see <code>round_status: "active"</code> and then <code>host:end_round</code>.
+                </div>
+                <button onclick="testRoundStateAndRequestId()" id="testRoundStateBtn" disabled>Start Test</button>
             </div>
         </div>
 
@@ -396,6 +413,7 @@
                 document.getElementById('testReconnectBtn').disabled = false;
                 document.getElementById('testCleanupBtn').disabled = false;
                 document.getElementById('testStateBtn').disabled = false;
+                document.getElementById('testRoundStateBtn').disabled = false;
                 
                 // Start ping interval
                 startPing();
@@ -423,14 +441,16 @@
                     
                     // Show success/error messages prominently
                     if (msg.type === 'error') {
-                        log(`⚠️ ERROR: ${msg.payload?.message || 'Unknown error'}`, 'error');
+                        log(`⚠️ ERROR: ${msg.payload?.message || 'Unknown error'}${msg.requestId ? ' [requestId: ' + msg.requestId + ']' : ''}`, 'error');
                         console.error('WebSocket error:', msg.payload?.message);
-                    } else if (msg.type === 'host:score_added') {
-                        log(`✓ Score updated successfully!`, 'info');
-                        console.log('Score added:', msg.payload);
                     } else if (msg.type === 'host:round_started') {
-                        log(`✓ Round started successfully! Round ID: ${msg.payload?.roundId}, Players: ${msg.payload?.playerCount}`, 'info');
+                        log(`✓ Round started successfully! Round ID: ${msg.payload?.roundId}, Players: ${msg.payload?.playerCount}${msg.requestId ? ' [requestId: ' + msg.requestId + ']' : ''}`, 'info');
                         console.log('Round started:', msg.payload);
+                    } else if (msg.type === 'host:round_ended') {
+                        log(`✓ Round ended successfully!${msg.requestId ? ' [requestId: ' + msg.requestId + ']' : ''}`, 'info');
+                        console.log('Round ended', msg.requestId ? { requestId: msg.requestId } : {});
+                    } else if (msg.type === 'host:score_added') {
+                        log(`✓ Score added! userId=${msg.payload?.userId} delta=${msg.payload?.delta}${msg.requestId ? ' [requestId: ' + msg.requestId + ']' : ''}`, 'info');
                     } else if (msg.type === 'round:assigned') {
                         log(`✓ Received character assignments for round ${msg.payload?.roundId}`, 'info');
                         console.log('Round assigned:', msg.payload);
@@ -559,7 +579,7 @@
                     payload = JSON.parse(payloadStr);
                 }
                 
-                // Auto-fill room code if available
+                // Auto-fill room code if available (host:end_round ignores payload; harmless)
                 if (currentRoomCode && !payload.code) {
                     payload.code = currentRoomCode;
                     document.getElementById('msgPayload').value = JSON.stringify(payload);
@@ -569,8 +589,11 @@
                 return;
             }
             
-            log(`Sending message: ${type}`, 'info');
-            sendWSMessage({ type, payload });
+            const reqId = document.getElementById('requestId')?.value?.trim();
+            const msg = { type, payload };
+            if (reqId) msg.requestId = reqId;
+            log(`Sending message: ${type}${reqId ? ' (requestId: ' + reqId + ')' : ''}`, 'info');
+            sendWSMessage(msg);
         }
 
         async function getRoomState() {
@@ -594,6 +617,7 @@
                 if (!response.ok) throw new Error(`Failed: ${response.statusText}`);
                 const data = await response.json();
                 log(`✓ Room State: ${JSON.stringify(data, null, 2)}`, 'info');
+                log(`  → current_round_id: ${data.current_round_id == null ? 'null' : JSON.stringify(data.current_round_id)}, round_status: ${data.round_status ?? '(missing)'}`, 'info');
             } catch (error) {
                 log(`✗ Get state error: ${error.message}`, 'error');
             }
@@ -723,6 +747,31 @@
             
             log('Step 2: Check WebSocket presence messages above for comparison', 'info');
             log('✓ Compare HTTP state with WebSocket presence. They should match.', 'info');
+        }
+
+        async function testRoundStateAndRequestId() {
+            const code = document.getElementById('roomCode').value || currentRoomCode;
+            if (!code) {
+                log('Please join a room first', 'error');
+                return;
+            }
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected', 'error');
+                return;
+            }
+            
+            log('🧪 Test 5: Round state, end_round & requestId', 'info');
+            log('Step 1: Getting room state (current_round_id, round_status)...', 'info');
+            await getRoomState();
+            
+            log('Step 2: Sending host:end_round with requestId=test-req-end-1...', 'info');
+            sendWSMessage({ type: 'host:end_round', requestId: 'test-req-end-1', payload: {} });
+            
+            await new Promise(r => setTimeout(r, 600));
+            log('Step 3: Getting room state again...', 'info');
+            await getRoomState();
+            
+            log('✓ Test 5 done. Check that host:round_ended in the log includes requestId: test-req-end-1.', 'info');
         }
 
         // Auto-authenticate on load

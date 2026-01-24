@@ -4,6 +4,9 @@
 DROP TABLE IF EXISTS round_assignments;
 DROP TABLE IF EXISTS room_used_characters;
 
+-- Must drop rooms.current_round_id before room_rounds (rooms FK references room_rounds)
+ALTER TABLE rooms DROP COLUMN IF EXISTS current_round_id;
+
 -- Tables that depend on room_rounds
 DROP TABLE IF EXISTS room_rounds;
 
