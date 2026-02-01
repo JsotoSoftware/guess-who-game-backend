@@ -133,6 +133,13 @@ ALTER TABLE rooms
   ADD COLUMN current_round_id UUID NULL
   REFERENCES room_rounds(id) ON DELETE SET NULL;
 
+ALTER TABLE rooms
+  ADD CONSTRAINT rooms_current_round_fk
+  FOREIGN KEY (current_round_id) REFERENCES room_rounds(id)
+  ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rooms_current_round_id ON rooms(current_round_id);
+
 -- Assignments per round (who got what)
 CREATE TABLE IF NOT EXISTS round_assignments (
   round_id UUID NOT NULL REFERENCES room_rounds(id) ON DELETE CASCADE,
@@ -143,6 +150,32 @@ CREATE TABLE IF NOT EXISTS round_assignments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_round_assignments_round_id ON round_assignments(round_id);
+
+CREATE TABLE IF NOT EXISTS round_claims (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  round_id uuid NOT NULL REFERENCES room_rounds(id) ON DELETE CASCADE,
+  claimant_user_id uuid NOT NULL,
+  status text NOT NULL CHECK (status IN ('open','approved','rejected','timed_out')),
+  opened_at timestamptz NOT NULL DEFAULT now(),
+  ends_at timestamptz NOT NULL,
+  resolved_at timestamptz NULL,
+  resolved_by text NULL CHECK (resolved_by IN ('votes','timeout'))
+)
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_open_claim_per_room
+  ON round_claims(room_id)
+  WHERE status = 'open';
+
+CREATE TABLE IF NOT EXISTS round_claim_votes (
+  claim_id uuid NOT NULL REFERENCES round_claims(id) ON DELETE CASCADE,
+  voter_user_id uuid NOT NULL,
+  vote text NOT NULL CHECK (vote IN ('yes','no')),
+  voted_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (claim_id, voter_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_round_claim_votes_claim ON round_claim_votes(claim_id);
 
 -- Used characters per room (prevents repeats within a room)
 CREATE TABLE IF NOT EXISTS room_used_characters (
