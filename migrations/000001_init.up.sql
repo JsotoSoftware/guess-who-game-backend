@@ -130,11 +130,10 @@ CREATE INDEX IF NOT EXISTS idx_room_rounds_room_id ON room_rounds(room_id);
 
 -- rooms.current_round_id: FK must be added after room_rounds exists. Set on start_round, cleared on end_round.
 ALTER TABLE rooms
-  ADD COLUMN current_round_id UUID NULL
-  REFERENCES room_rounds(id) ON DELETE SET NULL;
+  ADD COLUMN current_round_id UUID NULL;
 
 ALTER TABLE rooms
-  ADD CONSTRAINT rooms_current_round_fk
+  ADD CONSTRAINT rooms_current_round_id_fk
   FOREIGN KEY (current_round_id) REFERENCES room_rounds(id)
   ON DELETE SET NULL;
 
@@ -161,10 +160,17 @@ CREATE TABLE IF NOT EXISTS round_claims (
   ends_at timestamptz NOT NULL,
   resolved_at timestamptz NULL,
   resolved_by text NULL CHECK (resolved_by IN ('votes','timeout'))
-)
+);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_open_claim_per_room
   ON round_claims(room_id)
+  WHERE status = 'open';
+
+CREATE INDEX IF NOT EXISTS idx_round_claims_room_round
+ON round_claims(room_id, round_id);
+
+CREATE INDEX IF NOT EXISTS idx_round_claims_ends_at_open
+  ON round_claims(ends_at)
   WHERE status = 'open';
 
 CREATE TABLE IF NOT EXISTS round_claim_votes (
