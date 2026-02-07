@@ -15,9 +15,10 @@ type Config struct {
 	RedisAddr     string `envconfig:"REDIS_ADDR" default:"localhost:6379"`
 	RedisPassword string `envconfig:"REDIS_PASSWORD" default:""`
 
-	JWTSecret    string `envconfig:"JWT_SECRET" required:"true"`
-	CookieSecure bool   `envconfig:"COOKIE_SECURE" default:"false"`
-	CookieDomain string `envconfig:"COOKIE_DOMAIN" default:""`
+	JWTSecret        string `envconfig:"JWT_SECRET" required:"true"`
+	CookieSecure     bool   `envconfig:"COOKIE_SECURE" default:"false"`
+	CookieDomain     string `envconfig:"COOKIE_DOMAIN" default:""`
+	CORSAllowOrigins string `envconfig:"CORS_ALLOW_ORIGINS" default:"http://localhost:5173,http://localhost:3000"`
 }
 
 func Load() (Config, error) {

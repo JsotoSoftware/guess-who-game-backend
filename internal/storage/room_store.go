@@ -8,13 +8,13 @@ import (
 )
 
 type Room struct {
-	ID              string
-	Code            string
-	OwnerUserID     string
-	Status          string
-	CreatedAt       time.Time
-	LastActivityAt  time.Time
-	CurrentRoundID  *string
+	ID             string
+	Code           string
+	OwnerUserID    string
+	Status         string
+	CreatedAt      time.Time
+	LastActivityAt time.Time
+	CurrentRoundID *string
 }
 
 type RoomMember struct {
@@ -137,4 +137,40 @@ func (s *Storage) UpsertRoomMember(ctx context.Context, roomID, userID, displayN
 		    role = EXCLUDED.role
 	`, roomID, userID, displayName, role)
 	return err
+}
+
+func (s *Storage) IsRoomMember(ctx context.Context, roomID, userID string) (bool, error) {
+	var exists bool
+	err := s.PG.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM room_members
+			WHERE room_id = $1 AND user_id = $2
+		)
+	`, roomID, userID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func (s *Storage) UpdateRoomMemberSession(ctx context.Context, roomID, userID, displayName, role string) error {
+	_, err := s.PG.Exec(ctx, `
+		UPDATE room_members
+		SET display_name = $3, role = $4
+		WHERE room_id = $1 AND user_id = $2
+	`, roomID, userID, displayName, role)
+	return err
+}
+
+func (s *Storage) GetRoomMember(ctx context.Context, roomID, userID string) (*RoomMember, error) {
+	var m RoomMember
+	err := s.PG.QueryRow(ctx, `
+		SELECT user_id, display_name, role, score, joined_at
+		FROM room_members
+		WHERE room_id = $1 AND user_id = $2
+	`, roomID, userID).Scan(&m.UserID, &m.DisplayName, &m.Role, &m.Score, &m.JoinedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }

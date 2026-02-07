@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/auth"
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/storage"
@@ -9,26 +10,50 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
+func corsMiddleware(allowOrigins []string) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(allowOrigins))
+	for _, origin := range allowOrigins {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed != "" {
+			allowed[trimmed] = struct{}{}
 		}
+	}
 
-		next.ServeHTTP(w, r)
-	})
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin != "" {
+				if _, ok := allowed[origin]; ok {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Set("Vary", "Origin")
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
+					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+					w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				}
+			}
+
+			if r.Method == "OPTIONS" {
+				if origin == "" {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if _, ok := allowed[origin]; !ok {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
-func NewRouter(store *storage.Storage, tokens *auth.TokenMaker, cookieSecure bool, cookieDomain string, wsHandler *ws.Handler) *chi.Mux {
+func NewRouter(store *storage.Storage, tokens *auth.TokenMaker, cookieSecure bool, cookieDomain string, allowOrigins []string, wsHandler *ws.Handler) *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Use(corsMiddleware)
+	r.Use(corsMiddleware(allowOrigins))
 
 	h := NewHandler(store)
 
