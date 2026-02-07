@@ -27,7 +27,7 @@ type setRoomPacksReq struct {
 }
 
 func (h *RoomPacksHandlers) Set(w http.ResponseWriter, r *http.Request) {
-	_, ok := UserIDFromContext(r.Context())
+	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -53,6 +53,26 @@ func (h *RoomPacksHandlers) Set(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "failed", http.StatusInternalServerError)
+		return
+	}
+
+	isMember, err := h.Store.IsRoomMember(ctx, room.ID, userID)
+	if err != nil {
+		http.Error(w, "failed", http.StatusInternalServerError)
+		return
+	}
+	if !isMember {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	hostMember, err := h.Store.GetRoomMember(ctx, room.ID, userID)
+	if err != nil {
+		http.Error(w, "failed", http.StatusInternalServerError)
+		return
+	}
+	if hostMember.Role != "host" {
+		http.Error(w, "host only", http.StatusForbidden)
 		return
 	}
 
@@ -83,7 +103,7 @@ func (h *RoomPacksHandlers) Set(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoomPacksHandlers) Get(w http.ResponseWriter, r *http.Request) {
-	_, ok := UserIDFromContext(r.Context())
+	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -101,6 +121,16 @@ func (h *RoomPacksHandlers) Get(w http.ResponseWriter, r *http.Request) {
 	room, err := h.Store.GetRoomByCode(ctx, code)
 	if err != nil {
 		http.Error(w, "room not found", http.StatusNotFound)
+		return
+	}
+
+	isMember, err := h.Store.IsRoomMember(ctx, room.ID, userID)
+	if err != nil {
+		http.Error(w, "failed", http.StatusInternalServerError)
+		return
+	}
+	if !isMember {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 

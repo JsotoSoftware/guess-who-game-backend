@@ -151,6 +151,16 @@ func (h *RoomsHandlers) Members(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isMember, err := h.Store.IsRoomMember(ctx, room.ID, userID)
+	if err != nil {
+		http.Error(w, "failed", http.StatusInternalServerError)
+		return
+	}
+	if !isMember {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
 	members, err := h.Store.ListRoomMembers(ctx, room.ID)
 	if err != nil {
 		http.Error(w, "failed", http.StatusInternalServerError)
@@ -161,7 +171,7 @@ func (h *RoomsHandlers) Members(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RoomsHandlers) GetRoomStats(w http.ResponseWriter, r *http.Request) {
-	_, ok := UserIDFromContext(r.Context())
+	userID, ok := UserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -184,6 +194,16 @@ func (h *RoomsHandlers) GetRoomStats(w http.ResponseWriter, r *http.Request) {
 		}
 
 		http.Error(w, "get room failed", http.StatusInternalServerError)
+		return
+	}
+
+	isMember, err := h.Store.IsRoomMember(ctx, room.ID, userID)
+	if err != nil {
+		http.Error(w, "failed", http.StatusInternalServerError)
+		return
+	}
+	if !isMember {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 

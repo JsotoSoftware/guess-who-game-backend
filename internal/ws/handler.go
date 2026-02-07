@@ -57,12 +57,9 @@ func addRequestID(m map[string]any, id string) {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	raw := r.URL.Query().Get("access_token")
-	if raw == "" {
-		raw = r.URL.Query().Get("token")
-	}
-	if raw == "" {
-		http.Error(w, "missing access_token", http.StatusUnauthorized)
+	raw, ok := auth.ExtractBearerToken(r.Header.Get("Authorization"))
+	if !ok {
+		http.Error(w, "missing bearer token", http.StatusUnauthorized)
 		return
 	}
 
@@ -87,10 +84,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	readCtx := r.Context()
 	ctx := r.Context()
-
-	type tmpConn struct {
-		c *websocket.Conn
-	}
 
 	read := func() ([]byte, error) {
 		_, b, err := c.Read(readCtx)
@@ -166,7 +159,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
-			err = h.Store.UpsertRoomMember(dbCtx, roomObj.ID, userID, p.DisplayName, p.Role)
+			isMember, err := h.Store.IsRoomMember(dbCtx, roomObj.ID, userID)
+			cancel()
+			if err != nil {
+				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
+					"type": "error", "payload": map[string]any{"message": "failed to verify membership"},
+				}))
+				continue
+			}
+			if !isMember {
+				_ = c.Write(ctx, websocket.MessageText, Marshal(map[string]any{
+					"type": "error", "payload": map[string]any{"message": "not a room member"},
+				}))
+				continue
+			}
+
+			dbCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
+			err = h.Store.UpdateRoomMemberSession(dbCtx, roomObj.ID, userID, p.DisplayName, p.Role)
 			_ = h.Store.TouchRoomActivity(dbCtx, roomObj.ID)
 			cancel()
 			if err != nil {

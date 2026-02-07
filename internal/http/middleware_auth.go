@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/JsotoSoftware/guess-who-game-backend/internal/auth"
 )
@@ -21,12 +20,11 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 func RequireAuth(tokens *auth.TokenMaker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h := r.Header.Get("Authorization")
-			if h == "" || !strings.HasPrefix(strings.ToLower(h), "bearer ") {
+			raw, ok := auth.ExtractBearerToken(r.Header.Get("Authorization"))
+			if !ok {
 				http.Error(w, "missing bearer token", http.StatusUnauthorized)
 				return
 			}
-			raw := strings.TrimSpace(h[7:])
 
 			claims, err := tokens.ParseAccessToken(raw)
 			if err != nil || claims.UserID == "" {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -50,7 +51,8 @@ func main() {
 
 	wsHandler := ws.NewHandler(hub, st, tokens)
 
-	r := httphandler.NewRouter(st, tokens, cfg.CookieSecure, cfg.CookieDomain, wsHandler)
+	allowOrigins := strings.Split(cfg.CORSAllowOrigins, ",")
+	r := httphandler.NewRouter(st, tokens, cfg.CookieSecure, cfg.CookieDomain, allowOrigins, wsHandler)
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,

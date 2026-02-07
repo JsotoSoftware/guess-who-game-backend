@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -76,4 +77,17 @@ func NewRefreshToken() (string, error) {
 func HashToken(token string) []byte {
 	sum := sha256.Sum256([]byte(token))
 	return sum[:]
+}
+
+func ExtractBearerToken(header string) (string, bool) {
+	if header == "" || !strings.HasPrefix(strings.ToLower(header), "bearer ") {
+		return "", false
+	}
+
+	raw := strings.TrimSpace(header[7:])
+	if raw == "" {
+		return "", false
+	}
+
+	return raw, true
 }
